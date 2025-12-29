@@ -20,7 +20,7 @@ import {
     LayoutDashboard, 
     Users, 
     Ticket, 
-    Calendar,
+    Package,
     BarChart3,
     Settings,
     HelpCircle,
@@ -57,18 +57,18 @@ const navigationItems = [
         description: "Salary and compensation"
     },
     {
+        title: "Stock Management",
+        url: "/stock",
+        icon: Package,
+        badge: "45",
+        description: "Inventory and supplies"
+    },
+    {
         title: "Tickets",
         url: "/tickets",
         icon: Ticket,
         badge: "3",
         description: "Support requests"
-    },
-    {
-        title: "Calendar",
-        url: "/calendar",
-        icon: Calendar,
-        badge: null,
-        description: "Schedule management"
     },
     {
         title: "Reports",
