@@ -1,26 +1,37 @@
-"use client"
+"use client";
 
-import LoginPage from "@/components/LoginPage"
-import { useRouter, useSearchParams } from "next/navigation"
+export const dynamic = "force-dynamic";
 
-export default function Login() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const type = searchParams.get('type') || 'user'
+import { Suspense } from "react";
+import LoginPage from "@/components/LoginPage";
+import { useRouter, useSearchParams } from "next/navigation";
+
+function LoginContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const type = searchParams.get("type") || "user";
 
   const handleBack = () => {
-    router.push('/landing')
-  }
+    router.push("/landing");
+  };
 
   const handleLogin = () => {
-    router.push('/')
-  }
+    router.push("/");
+  };
 
   return (
-    <LoginPage 
+    <LoginPage
       onBack={handleBack}
       onLogin={handleLogin}
       initialTab={type}
     />
-  )
+  );
+}
+
+export default function Login() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginContent />
+    </Suspense>
+  );
 }
