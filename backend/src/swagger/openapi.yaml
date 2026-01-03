@@ -1,0 +1,33 @@
+openapi: 3.0.3
+info:
+  title: CRM Application
+  version: 1.0.0
+  description: CRM application API documentation
+
+servers:
+  - url: http://localhost:3001/api/v1
+    description: Development server
+
+tags:
+  - name: index
+    description: Health check and Test API
+
+components:
+  securitySchemes:
+    Bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+
+paths:
+  /health:
+    get:
+      tags: [index]
+      summary: Health check
+      responses:
+        '200':
+          description: API is running

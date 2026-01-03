@@ -3,7 +3,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
 import apiRoutes from './routes'
-import swagger from "./swagger"
+import swagger from "./swagger/swagger"
 
 // Load environment variables
 dotenv.config()
