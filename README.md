@@ -1,50 +1,128 @@
-# CRM Project 2026
+# CRM Project 2026 - Monorepo
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+A full-stack CRM application with separate frontend and backend in a monorepo structure.
+
+## Project Structure
+
+```
+crmdemo/
+├── frontend/              # Next.js React frontend
+├── backend/               # Express.js API backend
+├── packages/
+│   └── shared/            # Shared types and utilities
+├── package.json           # Root workspace configuration
+└── README.md
+```
 
 ## Features
 
-### QR Code Scanner
-- **Location**: Dashboard top-right corner
-- **Purpose**: Scan product QR codes for inventory management
-- **Features**:
-  - Camera access for real-time scanning
-  - Product information display after scanning
-  - Stock level indicators
-  - Simulated scanning for demo purposes
-  - Clean, non-intrusive UI integration
+### Frontend (Next.js)
+- **QR Code Scanner**: Dashboard integration for inventory management
+- **Attendance Management**: Employee check-in/check-out system
+- **Ticket System**: Support ticket creation and management
+- **Stock Management**: Inventory tracking with QR codes
+- **Payroll**: Employee payroll management
+
+### Backend (Express.js)
+- **RESTful API**: Clean API endpoints for all CRM features
+- **Authentication**: User authentication and authorization
+- **Database Integration**: Ready for your preferred database
+- **CORS & Security**: Configured with helmet and CORS
+
+### Shared Package
+- **Common Types**: TypeScript interfaces shared between frontend and backend
+- **Utilities**: Common helper functions and validators
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+- Node.js 18+ 
+- npm or yarn
 
+### Installation
+
+1. Install all dependencies:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Set up environment variables:
+```bash
+# Backend
+cp backend/.env.example backend/.env
+# Edit backend/.env with your configuration
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Development
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Start both frontend and backend in development mode:
+
+```bash
+# Start frontend (Next.js on port 3000)
+npm run dev:frontend
+
+# Start backend (Express on port 3001) 
+npm run dev:backend
+
+# Or start frontend only (default)
+npm run dev
+```
+
+### Building for Production
+
+```bash
+# Build all apps
+npm run build
+
+# Build individually
+npm run build:frontend
+npm run build:backend
+```
+
+### Available Scripts
+
+- `npm run dev` - Start frontend development server
+- `npm run dev:frontend` - Start frontend only
+- `npm run dev:backend` - Start backend only  
+- `npm run build` - Build all applications
+- `npm run start:frontend` - Start frontend production server
+- `npm run start:backend` - Start backend production server
+- `npm run lint` - Lint all applications
+- `npm run clean` - Clean all node_modules
+
+## API Endpoints
+
+The backend runs on `http://localhost:3001` with the following endpoints:
+
+- `GET /health` - Health check
+- `GET /api/v1/test` - Test endpoint
+
+## Frontend Access
+
+The frontend runs on `http://localhost:3000` and includes:
+- Dashboard with QR scanner
+- Attendance management
+- Ticket system
+- Stock management  
+- Payroll features
+
+## Development Workflow
+
+1. **Backend-First Approach**: Start by implementing API endpoints in `apps/backend/src/`
+2. **Shared Types**: Define common interfaces in `packages/shared/src/types/`
+3. **Frontend Integration**: Connect frontend components to backend APIs
+4. **Testing**: Add tests for both frontend and backend
+
+## Next Steps
+
+1. Set up your preferred database (PostgreSQL, MongoDB, etc.)
+2. Implement authentication system
+3. Add API endpoints for CRM features
+4. Connect frontend components to backend APIs
+5. Add comprehensive testing
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Express.js Documentation](https://expressjs.com/)
+- [TypeScript Documentation](https://www.typescriptlang.org/docs/)

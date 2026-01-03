@@ -18,6 +18,7 @@ import {
   Save,
   X
 } from "lucide-react"
+import { Ticket as TicketType, generateId } from "@crmdemo/shared"
 
 // Success popup component
 interface SuccessPopupProps {
@@ -110,8 +111,7 @@ export function CreateTicketForm() {
   }
 
   const generateTicketId = () => {
-    const timestamp = Date.now().toString().slice(-6)
-    return `TKT-${timestamp}`
+    return generateId()
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
