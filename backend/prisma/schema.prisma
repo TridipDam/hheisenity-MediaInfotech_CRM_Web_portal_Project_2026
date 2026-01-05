@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -13,58 +10,129 @@ datasource db {
   provider = "mysql"
 }
 
+// User role type enum
+enum UserRole {
+  ADMIN
+  STAFF
+}
+
 // Attendance Status enum
 enum AttendanceStatus {
+  CHECK_IN
+  CHECK_OUT
   PRESENT
   ABSENT
   LATE
-  HALF_DAY
-  ON_LEAVE
-  HOLIDAY
-  WEEKEND
+  EARLY
+  REJECTED
 }
 
-// Staff/Employee model
-model Staff {
-  id          String   @id @default(cuid())
-  employeeId  String   @unique
-  firstName   String
-  lastName    String
-  email       String   @unique
-  phone       String?
-  department  String
-  position    String
-  hireDate    DateTime
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// Attempt count enum
+enum AttemptCount {
+  ZERO
+  ONE
+  TWO
+  THREE
+}
+
+// User model
+model User {
+  id         String   @id @default(cuid())
+  name       String
+  role       UserRole @default(STAFF)
+  employeeId String   @unique
+  email      String   @unique
+  phone      String?
+  teamId     String?
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
-  attendances   Attendance[]
+  attendances           Attendance[]
+  dailyLocations        DailyLocation[]
+  attendanceOverrides   AttendanceOverride[] @relation("UserAttendanceOverrides")
+  adminOverrides        AttendanceOverride[] @relation("AdminAttendanceOverrides")
 
-  @@map("staffs")
+  @@map("users")
 }
 
-// Attendance model
+// Daily location assignments for geofencing
+model DailyLocation {
+  id         String   @id @default(cuid())
+  userId     String
+  date       DateTime @db.Date
+  latitude   Decimal  @db.Decimal(10, 8)
+  longitude  Decimal  @db.Decimal(11, 8)
+  radius     Int      @default(100) // meters
+  address    String?
+  city       String?
+  state      String?
+  startTime  DateTime
+  endTime    DateTime
+  assignedBy String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("daily_locations")
+}
+
+// Attendance records with location tracking
 model Attendance {
-  id          String           @id @default(cuid())
-  staffId     String
-  date        DateTime         @db.Date
-  clockIn     DateTime?
-  clockOut    DateTime?
-  breakStart  DateTime?
-  breakEnd    DateTime?
-  status      AttendanceStatus @default(PRESENT)
-  notes       String?          @db.Text
-  location    String?          // GPS location or office location
-  ipAddress   String?          // For tracking remote work
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id               String           @id @default(cuid())
+  userId           String
+  date             DateTime         @db.Date
+  clockIn          DateTime?
+  
+  // Location data
+  latitude         Decimal?         @db.Decimal(10, 8)
+  longitude        Decimal?         @db.Decimal(11, 8)
+  location         String?          // Human-readable location
+  
+  // Device and network info
+  ipAddress        String?
+  deviceInfo       String?          // Browser, OS, Device type
+  photo            String?          // Base64 or file path
+  
+  // Status and validation
+  status           AttendanceStatus @default(PRESENT)
+  attemptCount     AttemptCount     @default(ZERO)
+  locked           Boolean @default(false)
+  lockedReason     String   @db.Text
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   // Relations
-  staff       Staff            @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([staffId, date])
+  @@unique([userId, date])
+  @@index([date])
+  @@index([status])
   @@map("attendances")
 }
 
+// Attendance overrides for admin corrections
+model AttendanceOverride {
+  id        String           @id @default(cuid())
+  userId    String           // Foreign key field (String)
+  date      DateTime         @db.Date
+  adminId   String           // Foreign key field (String)
+  oldStatus AttendanceStatus
+  newStatus AttendanceStatus
+  reason    String           @db.Text
+  timestamp DateTime         @default(now())
+
+  // Relations (User objects)
+  user  User @relation("UserAttendanceOverrides", fields: [userId], references: [id], onDelete: Cascade)
+  admin User @relation("AdminAttendanceOverrides", fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([adminId])
+  @@index([date])
+  @@map("attendance_overrides")
+}
