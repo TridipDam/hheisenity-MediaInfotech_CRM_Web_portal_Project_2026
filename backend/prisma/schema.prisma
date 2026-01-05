@@ -18,12 +18,9 @@ enum UserRole {
 
 // Attendance Status enum
 enum AttendanceStatus {
-  CHECK_IN
-  CHECK_OUT
   PRESENT
   ABSENT
   LATE
-  EARLY
   REJECTED
 }
 

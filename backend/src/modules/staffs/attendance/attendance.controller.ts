@@ -2,6 +2,67 @@
 import { Request, Response } from 'express'
 import { getDeviceInfo } from '@/utils/deviceinfo'
 import { getHumanReadableLocation, getLocationFromCoordinates } from '@/utils/geolocation'
+import { createAttendanceRecord } from './attendance.service'
+import { GeolocationCoordinates } from './attendance.types'
+
+export const createAttendance = async (req: Request, res: Response) => {
+  try {
+    const { employeeId, latitude, longitude, photo, status = 'PRESENT' } = req.body
+
+    // Validate required fields
+    if (!employeeId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Employee ID is required'
+      })
+    }
+
+    // Get IP address and user agent
+    const ipAddress = req.ip || req.connection.remoteAddress || 'unknown'
+    const userAgent = req.headers['user-agent'] || ''
+
+    // Prepare coordinates if provided
+    let coordinates: GeolocationCoordinates | undefined
+    if (latitude && longitude) {
+      const lat = parseFloat(latitude)
+      const lng = parseFloat(longitude)
+      
+      // Validate coordinates
+      if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid coordinates provided'
+        })
+      }
+      
+      coordinates = { latitude: lat, longitude: lng }
+    }
+
+    // Create attendance record
+    const attendance = await createAttendanceRecord({
+      employeeId,
+      coordinates,
+      ipAddress,
+      userAgent,
+      photo,
+      status: status as 'PRESENT' | 'LATE'
+    })
+
+    return res.status(201).json({
+      success: true,
+      message: 'Attendance recorded successfully',
+      data: attendance
+    })
+  } catch (error) {
+    console.error('Error creating attendance:', error)
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create attendance record'
+    })
+  }
+}
+
+
 
 export const detectDevice = (req: Request, res: Response) => {
   try {
