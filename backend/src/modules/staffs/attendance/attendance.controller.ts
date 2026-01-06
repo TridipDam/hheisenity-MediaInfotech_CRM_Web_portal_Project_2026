@@ -285,7 +285,7 @@ export const getAssignedLocation = async (req: Request, res: Response) => {
 
 export const getAttendanceRecords = async (req: Request, res: Response) => {
   try {
-    const { page = '1', limit = '50', date, employeeId, status } = req.query
+    const { page = '1', limit = '50', date, dateFrom, dateTo, employeeId, status } = req.query
 
     const pageNum = parseInt(page as string) || 1
     const limitNum = parseInt(limit as string) || 50
@@ -294,10 +294,49 @@ export const getAttendanceRecords = async (req: Request, res: Response) => {
     // Build where clause
     const whereClause: any = {}
     
-    if (date) {
+    // Handle date filtering with proper timezone handling
+    if (dateFrom && dateTo) {
+      // Date range filtering - ensure we're comparing dates only, not datetime
+      const fromDateStr = dateFrom as string
+      const toDateStr = dateTo as string
+      
+      // Create date objects for the start and end of the day range
+      const fromDate = new Date(fromDateStr)
+      const toDate = new Date(toDateStr)
+      
+      // Set to start of day for fromDate and end of day for toDate
+      fromDate.setHours(0, 0, 0, 0)
+      toDate.setHours(23, 59, 59, 999)
+      
+      whereClause.date = {
+        gte: fromDate,
+        lte: toDate
+      }
+    } else if (dateFrom) {
+      // From date only
+      const fromDate = new Date(dateFrom as string)
+      fromDate.setHours(0, 0, 0, 0)
+      whereClause.date = {
+        gte: fromDate
+      }
+    } else if (dateTo) {
+      // To date only
+      const toDate = new Date(dateTo as string)
+      toDate.setHours(23, 59, 59, 999)
+      whereClause.date = {
+        lte: toDate
+      }
+    } else if (date) {
+      // Single date filtering (legacy support)
       const targetDate = new Date(date as string)
       targetDate.setHours(0, 0, 0, 0)
-      whereClause.date = targetDate
+      const endOfDay = new Date(date as string)
+      endOfDay.setHours(23, 59, 59, 999)
+      
+      whereClause.date = {
+        gte: targetDate,
+        lte: endOfDay
+      }
     }
 
     if (employeeId) {
@@ -337,9 +376,10 @@ export const getAttendanceRecords = async (req: Request, res: Response) => {
           }
         }
       },
-      orderBy: {
-        date: 'desc'
-      },
+      orderBy: [
+        { date: 'desc' },
+        { createdAt: 'desc' }
+      ],
       skip,
       take: limitNum
     })
@@ -383,6 +423,17 @@ export const getAttendanceRecords = async (req: Request, res: Response) => {
           limit: limitNum,
           total: totalCount,
           totalPages: Math.ceil(totalCount / limitNum)
+        }
+      },
+      meta: {
+        dateRange: {
+          from: dateFrom || null,
+          to: dateTo || null,
+          single: date || null
+        },
+        filters: {
+          employeeId: employeeId || null,
+          status: status || null
         }
       }
     })

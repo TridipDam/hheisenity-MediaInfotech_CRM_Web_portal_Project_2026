@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,11 +7,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import { AddAttendanceRecord } from "@/components/AddAttendanceRecord"
+import { DateRangePicker } from "@/components/DateRangePicker"
 import { 
   ChevronLeft, 
   ChevronRight, 
   Search, 
-  Calendar, 
   Filter, 
   Download, 
   Clock, 
@@ -27,9 +25,15 @@ import {
   MoreVertical,
   Loader2,
   RefreshCw,
-  Plus
+  Plus,
+  X
 } from "lucide-react"
-import { getAttendanceRecords, AttendanceRecord } from "@/lib/server-api"
+import { getAttendanceRecords, getAllEmployees, AttendanceRecord, Employee } from "@/lib/server-api"
+
+interface DateRange {
+  from: Date | null
+  to: Date | null
+}
 
 const getStatusIcon = (status: string) => {
   switch (status) {
@@ -88,7 +92,7 @@ export function AttendancePage() {
     month: 'long',
     day: 'numeric'
   }))
-  const [attendanceData, setAttendanceData] = React.useState<AttendanceRecord[]>([])
+  const [combinedData, setCombinedData] = React.useState<(AttendanceRecord & { hasAttendance: boolean })[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [pagination, setPagination] = React.useState({
@@ -100,7 +104,7 @@ export function AttendancePage() {
   const [filters, setFilters] = React.useState({
     search: '',
     status: '',
-    date: new Date().toISOString().split('T')[0]
+    dateRange: { from: new Date(), to: null } as DateRange
   })
 
   const fetchAttendanceData = React.useCallback(async () => {
@@ -108,13 +112,37 @@ export function AttendancePage() {
       setLoading(true)
       setError(null)
       
+      // Fetch all employees first
+      const employeesResponse = await getAllEmployees({ limit: 1000 }) // Get all employees
+      let employees: Employee[] = []
+      if (employeesResponse.success && employeesResponse.data) {
+        employees = employeesResponse.data.employees
+      }
+      
       const params: Record<string, string | number> = {
         page: pagination.page,
         limit: pagination.limit
       }
       
-      if (filters.date) {
-        params.date = filters.date
+      // Handle date range filtering
+      if (filters.dateRange.from) {
+        params.dateFrom = filters.dateRange.from.toISOString().split('T')[0]
+      }
+      
+      if (filters.dateRange.to) {
+        params.dateTo = filters.dateRange.to.toISOString().split('T')[0]
+      }
+      
+      // If we have a single date (from but no to), use it as both from and to
+      if (filters.dateRange.from && !filters.dateRange.to) {
+        const singleDate = filters.dateRange.from.toISOString().split('T')[0]
+        params.dateFrom = singleDate
+        params.dateTo = singleDate
+      }
+      
+      // If no date range is selected at all, default to today
+      if (!filters.dateRange.from && !filters.dateRange.to) {
+        params.date = new Date().toISOString().split('T')[0]
       }
       
       if (filters.status) {
@@ -124,20 +152,69 @@ export function AttendancePage() {
       const response = await getAttendanceRecords(params)
       
       if (response.success && response.data) {
-        let records = response.data.records
+        const records = response.data.records
+        
+        // Create combined data: all employees with their attendance status
+        const combined = employees.map(employee => {
+          const attendanceRecord = records.find(record => record.employeeId === employee.employeeId)
+          
+          if (attendanceRecord) {
+            return {
+              ...attendanceRecord,
+              hasAttendance: true
+            }
+          } else {
+            // Create a placeholder record for employees without attendance
+            return {
+              id: `placeholder-${employee.id}`,
+              employeeId: employee.employeeId,
+              employeeName: employee.name,
+              email: employee.email,
+              phone: employee.phone,
+              teamId: employee.teamId,
+              isTeamLeader: employee.isTeamLeader,
+              date: new Date().toISOString().split('T')[0],
+              status: 'ABSENT' as const,
+              location: undefined,
+              latitude: undefined,
+              longitude: undefined,
+              ipAddress: undefined,
+              deviceInfo: undefined,
+              photo: undefined,
+              locked: false,
+              lockedReason: undefined,
+              attemptCount: 'ZERO' as const,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              hasAttendance: false
+            }
+          }
+        })
         
         // Apply client-side search filter if needed
+        let filteredCombined = combined
         if (filters.search) {
           const searchLower = filters.search.toLowerCase()
-          records = records.filter(record => 
+          filteredCombined = combined.filter(record => 
             record.employeeName.toLowerCase().includes(searchLower) ||
             record.employeeId.toLowerCase().includes(searchLower) ||
             record.email.toLowerCase().includes(searchLower)
           )
         }
         
-        setAttendanceData(records)
-        setPagination(response.data.pagination)
+        // Apply status filter
+        if (filters.status) {
+          filteredCombined = filteredCombined.filter(record => record.status === filters.status)
+        }
+        
+        setCombinedData(filteredCombined)
+        
+        // Update pagination based on combined data
+        setPagination(prev => ({
+          ...prev,
+          total: filteredCombined.length,
+          totalPages: Math.ceil(filteredCombined.length / prev.limit)
+        }))
       }
     } catch (error) {
       console.error('Error fetching attendance data:', error)
@@ -151,8 +228,25 @@ export function AttendancePage() {
     fetchAttendanceData()
   }, [fetchAttendanceData])
 
+  // Reset pagination when filters change (except page)
+  React.useEffect(() => {
+    setPagination(prev => ({ ...prev, page: 1 }))
+  }, [filters.search, filters.status, filters.dateRange.from, filters.dateRange.to])
+
   const handleRecordAdded = (newRecord: AttendanceRecord) => {
-    setAttendanceData(prev => [newRecord, ...prev])
+    // Update the combined data with the new record
+    setCombinedData(prev => {
+      const updated = prev.map(record => {
+        if (record.employeeId === newRecord.employeeId) {
+          return {
+            ...newRecord,
+            hasAttendance: true
+          }
+        }
+        return record
+      })
+      return updated
+    })
     setShowAddForm(false)
     // Refresh data to get the complete record
     setTimeout(() => {
@@ -165,41 +259,85 @@ export function AttendancePage() {
   }
 
   const handleDateChange = (direction: 'prev' | 'next') => {
-    const currentDateObj = new Date(filters.date)
-    if (direction === 'prev') {
-      currentDateObj.setDate(currentDateObj.getDate() - 1)
+    let targetDate: Date
+    
+    if (filters.dateRange.from && !filters.dateRange.to) {
+      // Single date selected
+      targetDate = new Date(filters.dateRange.from)
     } else {
-      currentDateObj.setDate(currentDateObj.getDate() + 1)
+      // No date or range selected, use today
+      targetDate = new Date()
     }
     
-    const newDate = currentDateObj.toISOString().split('T')[0]
-    setFilters(prev => ({ ...prev, date: newDate }))
-    setCurrentDate(currentDateObj.toLocaleDateString('en-US', {
+    if (direction === 'prev') {
+      targetDate.setDate(targetDate.getDate() - 1)
+    } else {
+      targetDate.setDate(targetDate.getDate() + 1)
+    }
+    
+    // Update both the display and the filter
+    setFilters(prev => ({ 
+      ...prev, 
+      dateRange: { from: targetDate, to: null }
+    }))
+    
+    setCurrentDate(targetDate.toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric'
     }))
+    
+    // Reset pagination to first page when date changes
+    setPagination(prev => ({ ...prev, page: 1 }))
+  }
+
+  const handleDateRangeChange = (range: DateRange) => {
+    setFilters(prev => ({ ...prev, dateRange: range }))
+    
+    // Update current date display
+    if (range.from) {
+      if (range.to && range.from.toDateString() !== range.to.toDateString()) {
+        setCurrentDate(`${range.from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${range.to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`)
+      } else {
+        setCurrentDate(range.from.toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        }))
+      }
+    } else {
+      setCurrentDate(new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      }))
+    }
+    
+    // Reset pagination to first page when date changes
+    setPagination(prev => ({ ...prev, page: 1 }))
   }
 
   // Calculate statistics
   const stats = React.useMemo(() => {
-    const total = attendanceData.length
-    const present = attendanceData.filter(r => r.status === 'PRESENT').length
-    const late = attendanceData.filter(r => r.status === 'LATE').length
-    const absent = attendanceData.filter(r => r.status === 'ABSENT').length
+    const total = combinedData.length
+    const present = combinedData.filter(r => r.status === 'PRESENT').length
+    const late = combinedData.filter(r => r.status === 'LATE').length
+    const absent = combinedData.filter(r => r.status === 'ABSENT').length
     
-    const avgHours = attendanceData
-      .filter(r => r.clockIn)
+    const avgHours = combinedData
+      .filter(r => r.clockIn && r.hasAttendance)
       .reduce((acc, r) => {
         const clockInTime = new Date(r.clockIn!)
         const now = new Date()
         const diffHours = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60)
         return acc + diffHours
-      }, 0) / Math.max(1, attendanceData.filter(r => r.clockIn).length)
+      }, 0) / Math.max(1, combinedData.filter(r => r.clockIn && r.hasAttendance).length)
 
     return { total, present, late, absent, avgHours }
-  }, [attendanceData])
+  }, [combinedData])
 
   return (
     <div className="min-h-screen bg-gray-50/30">
@@ -209,15 +347,15 @@ export function AttendancePage() {
           onBack={() => setShowAddForm(false)}
         />
       ) : (
-        <div className="p-8 space-y-8">
+        <div className="p-6 space-y-6">
         {/* Header Section */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="space-y-1">
-              <h1 className="text-3xl font-bold text-gray-900">Employee Attendance</h1>
+              <h1 className="text-2xl font-bold text-gray-900">Employee Attendance</h1>
               <p className="text-gray-600">Monitor and manage employee attendance records</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <Button 
                 variant="outline" 
                 className="border-gray-300 hover:bg-gray-50"
@@ -229,7 +367,7 @@ export function AttendancePage() {
               </Button>
               <Button variant="outline" className="border-gray-300 hover:bg-gray-50">
                 <Download className="h-4 w-4 mr-2" />
-                Export Report
+                Export
               </Button>
               <Button 
                 onClick={() => setShowAddForm(true)}
@@ -241,127 +379,138 @@ export function AttendancePage() {
             </div>
           </div>
           
-          <Separator className="my-6" />
+          <Separator className="my-4" />
           
           {/* Date Navigation */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1 bg-gray-50 rounded-lg p-1 border border-gray-200">
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className="h-8 w-8 p-0"
+                  className="h-7 w-7 p-0 hover:bg-white"
                   onClick={() => handleDateChange('prev')}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-sm font-semibold text-gray-700 px-3">{currentDate}</span>
+                <div className="px-3 py-1">
+                  <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                    {currentDate}
+                  </span>
+                </div>
                 <Button 
                   variant="ghost" 
                   size="sm" 
-                  className="h-8 w-8 p-0"
+                  className="h-7 w-7 p-0 hover:bg-white"
                   onClick={() => handleDateChange('next')}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
+              
+              <Badge variant="outline" className="text-gray-500 font-normal">
+                <Clock className="h-3 w-3 mr-1" />
+                Live
+              </Badge>
             </div>
-            <div className="text-sm text-gray-500">
-              Last updated: {new Date().toLocaleTimeString()}
+            
+            <div className="text-sm text-gray-500 flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              Updated: {new Date().toLocaleTimeString()}
             </div>
           </div>
         </div>
 
         {/* Analytics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card className="bg-white shadow-sm border-gray-200">
-            <CardHeader className="pb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="bg-white shadow-sm border-gray-200 hover:shadow-md transition-shadow">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Total Present</CardTitle>
+                <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wide">Total Present</CardTitle>
                 <div className="p-2 bg-green-50 rounded-lg">
                   <Users className="h-4 w-4 text-green-600" />
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
+            <CardContent className="pt-0">
+              <div className="space-y-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold text-gray-900">{stats.present}</span>
+                  <span className="text-2xl font-bold text-gray-900">{stats.present}</span>
                   <div className="flex items-center gap-1 text-green-600">
                     <TrendingUp className="h-3 w-3" />
-                    <span className="text-sm font-medium">+5.2%</span>
+                    <span className="text-xs font-medium">+5.2%</span>
                   </div>
                 </div>
-                <p className="text-sm text-gray-500">vs yesterday</p>
+                <p className="text-xs text-gray-500">vs yesterday</p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-white shadow-sm border-gray-200">
-            <CardHeader className="pb-3">
+          <Card className="bg-white shadow-sm border-gray-200 hover:shadow-md transition-shadow">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Late Arrivals</CardTitle>
+                <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wide">Late Arrivals</CardTitle>
                 <div className="p-2 bg-amber-50 rounded-lg">
                   <AlertCircle className="h-4 w-4 text-amber-600" />
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
+            <CardContent className="pt-0">
+              <div className="space-y-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold text-gray-900">{stats.late}</span>
+                  <span className="text-2xl font-bold text-gray-900">{stats.late}</span>
                   <div className="flex items-center gap-1 text-red-600">
                     <TrendingDown className="h-3 w-3" />
-                    <span className="text-sm font-medium">-2.1%</span>
+                    <span className="text-xs font-medium">-2.1%</span>
                   </div>
                 </div>
-                <p className="text-sm text-gray-500">vs yesterday</p>
+                <p className="text-xs text-gray-500">vs yesterday</p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-white shadow-sm border-gray-200">
-            <CardHeader className="pb-3">
+          <Card className="bg-white shadow-sm border-gray-200 hover:shadow-md transition-shadow">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Absent</CardTitle>
+                <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wide">Absent</CardTitle>
                 <div className="p-2 bg-red-50 rounded-lg">
                   <XCircle className="h-4 w-4 text-red-600" />
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
+            <CardContent className="pt-0">
+              <div className="space-y-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold text-gray-900">{stats.absent}</span>
+                  <span className="text-2xl font-bold text-gray-900">{stats.absent}</span>
                   <div className="flex items-center gap-1 text-green-600">
                     <TrendingDown className="h-3 w-3" />
-                    <span className="text-sm font-medium">-12.5%</span>
+                    <span className="text-xs font-medium">-12.5%</span>
                   </div>
                 </div>
-                <p className="text-sm text-gray-500">vs yesterday</p>
+                <p className="text-xs text-gray-500">vs yesterday</p>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-white shadow-sm border-gray-200">
-            <CardHeader className="pb-3">
+          <Card className="bg-white shadow-sm border-gray-200 hover:shadow-md transition-shadow">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-gray-600 uppercase tracking-wide">Avg. Hours</CardTitle>
+                <CardTitle className="text-xs font-medium text-gray-600 uppercase tracking-wide">Avg. Hours</CardTitle>
                 <div className="p-2 bg-blue-50 rounded-lg">
                   <Clock className="h-4 w-4 text-blue-600" />
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
+            <CardContent className="pt-0">
+              <div className="space-y-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold text-gray-900">{stats.avgHours.toFixed(1)}</span>
+                  <span className="text-2xl font-bold text-gray-900">{stats.avgHours.toFixed(1)}</span>
                   <div className="flex items-center gap-1 text-green-600">
                     <TrendingUp className="h-3 w-3" />
-                    <span className="text-sm font-medium">+0.3h</span>
+                    <span className="text-xs font-medium">+0.3h</span>
                   </div>
                 </div>
-                <p className="text-sm text-gray-500">hours per day</p>
+                <p className="text-xs text-gray-500">hours per day</p>
               </div>
             </CardContent>
           </Card>
@@ -369,10 +518,12 @@ export function AttendancePage() {
 
         {/* Filters and Actions */}
         <Card className="bg-white shadow-sm border-gray-200">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-4 flex-1">
-                <div className="relative flex-1 max-w-md">
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              {/* Main Filter Row */}
+              <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+                {/* Search Input */}
+                <div className="relative flex-1 max-w-sm">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                   <Input
                     placeholder="Search employees..."
@@ -381,44 +532,114 @@ export function AttendancePage() {
                     onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
                   />
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="border-gray-300 hover:bg-gray-50">
-                      <Calendar className="h-4 w-4 mr-2" />
-                      Date Range
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-48">
-                    <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }))}>
-                      Today
-                    </DropdownMenuItem>
-                    <DropdownMenuItem>This Week</DropdownMenuItem>
-                    <DropdownMenuItem>This Month</DropdownMenuItem>
-                    <DropdownMenuItem>Custom Range</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="border-gray-300 hover:bg-gray-50">
-                      <Filter className="h-4 w-4 mr-2" />
-                      Status
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-48">
-                    <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, status: '' }))}>
-                      All Status
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, status: 'PRESENT' }))}>
-                      Present
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, status: 'LATE' }))}>
-                      Late
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, status: 'ABSENT' }))}>
-                      Absent
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                
+                {/* Date Range Picker */}
+                <div className="shrink-0">
+                  <DateRangePicker
+                    value={filters.dateRange}
+                    onChange={handleDateRangeChange}
+                    placeholder="Select date range"
+                    className="w-[240px]"
+                  />
+                </div>
+                
+                {/* Status Filter */}
+                <div className="shrink-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" className="border-gray-300 hover:bg-gray-50 min-w-[100px]">
+                        <Filter className="h-4 w-4 mr-2" />
+                        <span className="flex-1 text-left">
+                          {filters.status || 'Status'}
+                        </span>
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-40">
+                      <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, status: '' }))}>
+                        All Status
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, status: 'PRESENT' }))}>
+                        Present
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, status: 'LATE' }))}>
+                        Late
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, status: 'ABSENT' }))}>
+                        Absent
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+              
+              {/* Filter Summary Row */}
+              {(filters.search || filters.status || filters.dateRange.from) && (
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <div className="flex items-center gap-2">
+                    {filters.search && (
+                      <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-200">
+                        Search: &quot;{filters.search}&quot;
+                        <X 
+                          className="ml-1 h-3 w-3 cursor-pointer hover:text-blue-900" 
+                          onClick={() => setFilters(prev => ({ ...prev, search: '' }))}
+                        />
+                      </Badge>
+                    )}
+                    
+                    {filters.status && (
+                      <Badge variant="secondary" className="bg-green-50 text-green-700 border-green-200">
+                        {filters.status}
+                        <X 
+                          className="ml-1 h-3 w-3 cursor-pointer hover:text-green-900" 
+                          onClick={() => setFilters(prev => ({ ...prev, status: '' }))}
+                        />
+                      </Badge>
+                    )}
+                    
+                    {filters.dateRange.from && (
+                      <Badge variant="secondary" className="bg-purple-50 text-purple-700 border-purple-200">
+                        {filters.dateRange.from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        {filters.dateRange.to && filters.dateRange.from.toDateString() !== filters.dateRange.to.toDateString() && 
+                          ` - ${filters.dateRange.to.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                        }
+                        <X 
+                          className="ml-1 h-3 w-3 cursor-pointer hover:text-purple-900" 
+                          onClick={() => setFilters(prev => ({ ...prev, dateRange: { from: null, to: null } }))}
+                        />
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => {
+                      const today = new Date()
+                      setFilters({ 
+                        search: '', 
+                        status: '', 
+                        dateRange: { from: today, to: null } 
+                      })
+                      setCurrentDate(today.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      }))
+                      setPagination(prev => ({ ...prev, page: 1 }))
+                    }}
+                    className="text-gray-500 hover:text-gray-700 h-7"
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Clear All
+                  </Button>
+                </div>
+              )}
+              
+              <div className="flex items-center justify-between">
+                <Badge variant="outline" className="text-gray-600">
+                  {combinedData.length} employees found
+                </Badge>
               </div>
             </div>
           </CardContent>
@@ -446,12 +667,12 @@ export function AttendancePage() {
                 </Button>
               </div>
             </div>
-          ) : attendanceData.length === 0 ? (
+          ) : combinedData.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <Users className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-600 font-medium">No attendance records found</p>
-                <p className="text-gray-500 text-sm">Try adjusting your filters or add a new record</p>
+                <p className="text-gray-600 font-medium">No employees found</p>
+                <p className="text-gray-500 text-sm">Try adjusting your filters</p>
               </div>
             </div>
           ) : (
@@ -468,22 +689,27 @@ export function AttendancePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {attendanceData.map((record, index) => (
+                {combinedData.map((record, index) => (
                   <TableRow 
                     key={record.id} 
                     className={`hover:bg-gray-50/50 border-b border-gray-100 ${
                       index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
-                    }`}
+                    } ${!record.hasAttendance ? 'opacity-60' : ''}`}
                   >
                     <TableCell className="py-4 px-6">
                       <div className="flex items-center gap-4">
                         <div className="relative">
-                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-sm">
+                          <div className="w-12 h-12 bg-linear-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-sm">
                             {record.employeeName.split(' ').map(n => n[0]).join('').toUpperCase()}
                           </div>
-                          {getStatusIcon(record.status) && (
+                          {record.hasAttendance && getStatusIcon(record.status) && (
                             <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
                               {getStatusIcon(record.status)}
+                            </div>
+                          )}
+                          {!record.hasAttendance && (
+                            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
+                              <XCircle className="h-4 w-4 text-gray-400" />
                             </div>
                           )}
                         </div>
@@ -495,29 +721,41 @@ export function AttendancePage() {
                       </div>
                     </TableCell>
                     <TableCell className="py-4 px-6">
-                      {getStatusBadge(record.status)}
+                      {record.hasAttendance ? (
+                        getStatusBadge(record.status)
+                      ) : (
+                        <Badge className="bg-gray-50 text-gray-500 border-gray-200">
+                          No Record
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="py-4 px-6">
                       <div className="space-y-1">
                         <div className="text-sm font-semibold text-gray-900">
-                          {formatTime(record.clockIn)}
+                          {record.hasAttendance ? formatTime(record.clockIn) : '-'}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {record.clockIn ? new Date(record.clockIn).toLocaleDateString() : '-'}
+                          {record.hasAttendance && record.clockIn ? new Date(record.clockIn).toLocaleDateString() : '-'}
                         </div>
                       </div>
                     </TableCell>
                     <TableCell className="py-4 px-6">
-                      <span className="font-semibold text-gray-900">{calculateWorkHours(record.clockIn)}</span>
+                      <span className="font-semibold text-gray-900">
+                        {record.hasAttendance ? calculateWorkHours(record.clockIn) : '-'}
+                      </span>
                     </TableCell>
                     <TableCell className="py-4 px-6">
                       <div className="flex items-center gap-2 text-gray-600">
                         <MapPin className="h-4 w-4 text-gray-400" />
-                        <span className="text-sm truncate">{record.location || 'Not provided'}</span>
+                        <span className="text-sm truncate">
+                          {record.hasAttendance ? (record.location || 'Not provided') : '-'}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="py-4 px-6">
-                      <span className="text-sm text-gray-600 line-clamp-2">{record.deviceInfo || 'Not provided'}</span>
+                      <span className="text-sm text-gray-600 line-clamp-2">
+                        {record.hasAttendance ? (record.deviceInfo || 'Not provided') : '-'}
+                      </span>
                     </TableCell>
                     <TableCell className="py-4 px-6">
                       <DropdownMenu>
@@ -528,7 +766,9 @@ export function AttendancePage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem>View Details</DropdownMenuItem>
-                          <DropdownMenuItem>Edit Record</DropdownMenuItem>
+                          {record.hasAttendance && (
+                            <DropdownMenuItem>Edit Record</DropdownMenuItem>
+                          )}
                           <DropdownMenuItem>Send Message</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -541,10 +781,10 @@ export function AttendancePage() {
         </Card>
 
         {/* Footer */}
-        {!loading && !error && attendanceData.length > 0 && (
+        {!loading && !error && combinedData.length > 0 && (
           <div className="flex items-center justify-between text-sm text-gray-500 bg-white rounded-lg p-4 border border-gray-200">
             <div>
-              Showing {attendanceData.length} of {pagination.total} records
+              Showing {combinedData.length} of {pagination.total} employees
             </div>
             <div className="flex items-center gap-2">
               <Button 

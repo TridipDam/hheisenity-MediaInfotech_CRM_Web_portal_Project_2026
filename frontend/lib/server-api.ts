@@ -227,6 +227,8 @@ export async function getAttendanceRecords(params?: {
     page?: number
     limit?: number
     date?: string
+    dateFrom?: string
+    dateTo?: string
     employeeId?: string
     status?: string
 }): Promise<GetAttendanceResponse> {
@@ -502,5 +504,216 @@ export async function createFieldEngineer(fieldEngineer: CreateFieldEngineerRequ
       message: 'Failed to create field engineer',
       error: error instanceof Error ? error.message : 'Unknown error'
     }
+  }
+}
+
+// Employee Management Types
+export type Employee = {
+  id: string
+  name: string
+  employeeId: string
+  email: string
+  phone?: string
+  teamId?: string
+  isTeamLeader: boolean
+  status: string
+  createdAt: string
+  updatedAt: string
+  assignedBy?: string
+}
+
+export type GetEmployeesResponse = {
+  success: boolean
+  data?: {
+    employees: Employee[]
+    pagination: {
+      page: number
+      limit: number
+      total: number
+      totalPages: number
+    }
+  }
+  error?: string
+}
+
+export type CreateEmployeeRequest = {
+  name: string
+  email: string
+  password: string
+  phone?: string
+  teamId?: string
+  isTeamLeader?: boolean
+  assignedBy?: string
+}
+
+export type CreateEmployeeResponse = {
+  success: boolean
+  message: string
+  data?: Employee
+  error?: string
+}
+
+export type UpdateEmployeeRequest = {
+  name?: string
+  email?: string
+  phone?: string
+  teamId?: string
+  isTeamLeader?: boolean
+  status?: string
+  password?: string
+}
+
+export type UpdateEmployeeResponse = {
+  success: boolean
+  message: string
+  data?: Employee
+  error?: string
+}
+
+export type GetNextEmployeeIdResponse = {
+  success: boolean
+  data?: {
+    nextEmployeeId: string
+  }
+  error?: string
+}
+
+// Employee Management API Functions
+export async function getAllEmployees(params?: {
+  page?: number
+  limit?: number
+  search?: string
+  status?: string
+}): Promise<GetEmployeesResponse> {
+  try {
+    const searchParams = new URLSearchParams()
+    
+    if (params?.page) searchParams.append('page', params.page.toString())
+    if (params?.limit) searchParams.append('limit', params.limit.toString())
+    if (params?.search) searchParams.append('search', params.search)
+    if (params?.status) searchParams.append('status', params.status)
+
+    const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/employees${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
+    
+    const res = await fetch(url, {
+      cache: 'no-store'
+    })
+
+    const response = await res.json()
+
+    if (!res.ok) {
+      throw new Error(response.error || `Failed to get employees: ${res.status}`)
+    }
+
+    return response
+  } catch (error) {
+    console.error('getAllEmployees error:', error)
+    throw error
+  }
+}
+
+export async function createEmployee(employee: CreateEmployeeRequest): Promise<CreateEmployeeResponse> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/employees`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(employee),
+      cache: 'no-store'
+    })
+
+    const response = await res.json()
+
+    if (!res.ok) {
+      throw new Error(response.error || `Failed to create employee: ${res.status}`)
+    }
+
+    return response
+  } catch (error) {
+    console.error('createEmployee error:', error)
+    throw error
+  }
+}
+
+export async function updateEmployee(id: string, employee: UpdateEmployeeRequest): Promise<UpdateEmployeeResponse> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/employees/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(employee),
+      cache: 'no-store'
+    })
+
+    const response = await res.json()
+
+    if (!res.ok) {
+      throw new Error(response.error || `Failed to update employee: ${res.status}`)
+    }
+
+    return response
+  } catch (error) {
+    console.error('updateEmployee error:', error)
+    throw error
+  }
+}
+
+export async function deleteEmployee(id: string): Promise<{ success: boolean; message: string; error?: string }> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/employees/${id}`, {
+      method: 'DELETE',
+      cache: 'no-store'
+    })
+
+    const response = await res.json()
+
+    if (!res.ok) {
+      throw new Error(response.error || `Failed to delete employee: ${res.status}`)
+    }
+
+    return response
+  } catch (error) {
+    console.error('deleteEmployee error:', error)
+    throw error
+  }
+}
+
+export async function getEmployeeById(id: string): Promise<{ success: boolean; data?: Employee; error?: string }> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/employees/${id}`, {
+      cache: 'no-store'
+    })
+
+    const response = await res.json()
+
+    if (!res.ok) {
+      throw new Error(response.error || `Failed to get employee: ${res.status}`)
+    }
+
+    return response
+  } catch (error) {
+    console.error('getEmployeeById error:', error)
+    throw error
+  }
+}
+
+export async function getNextEmployeeId(): Promise<GetNextEmployeeIdResponse> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/employees/next-id`, {
+      cache: 'no-store'
+    })
+
+    const response = await res.json()
+
+    if (!res.ok) {
+      throw new Error(response.error || `Failed to get next employee ID: ${res.status}`)
+    }
+
+    return response
+  } catch (error) {
+    console.error('getNextEmployeeId error:', error)
+    throw error
   }
 }
