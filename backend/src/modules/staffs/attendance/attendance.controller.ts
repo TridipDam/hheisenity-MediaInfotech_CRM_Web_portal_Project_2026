@@ -113,6 +113,7 @@ export const getAttendanceRecords = async (req: Request, res: Response) => {
       isTeamLeader: attendance.employee.isTeamLeader,
       date: attendance.date.toISOString().split('T')[0],
       clockIn: attendance.clockIn?.toISOString(),
+      clockOut: attendance.clockOut?.toISOString(),
       status: attendance.status,
       location: attendance.location,
       latitude: attendance.latitude ? Number(attendance.latitude) : undefined,
@@ -309,10 +310,15 @@ export const detectDevice = async (req: Request, res: Response) => {
 
 export const createAttendance = async (req: Request, res: Response) => {
   try {
-    const { employeeId, latitude, longitude, photo, status = 'PRESENT', location, bypassLocationValidation } = req.body
+    const { employeeId, latitude, longitude, photo, status = 'PRESENT', location, bypassLocationValidation, action } = req.body
 
     if (!employeeId) {
       return res.status(400).json({ success: false, error: 'Employee ID is required' })
+    }
+
+    // Validate action parameter
+    if (action && !['check-in', 'check-out'].includes(action)) {
+      return res.status(400).json({ success: false, error: 'Invalid action. Must be "check-in" or "check-out"' })
     }
 
     const ipAddress = req.ip || req.connection.remoteAddress || 'unknown'
@@ -337,7 +343,7 @@ export const createAttendance = async (req: Request, res: Response) => {
       coordinates = { latitude: lat, longitude: lng }
     }
 
-    console.info({ event: 'create_attendance_request', employeeId, hasCoordinates: !!coordinates, ipAddress })
+    console.info({ event: 'create_attendance_request', employeeId, hasCoordinates: !!coordinates, ipAddress, action })
 
     // Call service (service handles atomic attempts and validation)
     const attendance = await createAttendanceRecord({
@@ -348,7 +354,8 @@ export const createAttendance = async (req: Request, res: Response) => {
       photo,
       status: status as 'PRESENT' | 'LATE',
       locationText: location,
-      bypassLocationValidation: bypassLocationValidation === true || bypassLocationValidation === 'true'
+      bypassLocationValidation: bypassLocationValidation === true || bypassLocationValidation === 'true',
+      action: action as 'check-in' | 'check-out' | undefined
     })
 
     return res.status(201).json({ success: true, message: 'Attendance recorded successfully', data: attendance })

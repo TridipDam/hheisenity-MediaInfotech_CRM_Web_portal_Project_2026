@@ -504,7 +504,7 @@ export default function LandingPage({ onGetStarted, isLoggedIn = false, userProf
   const handleLogout = () => {
     console.log('Landing page logout clicked')
     signOut({ 
-      callbackUrl: '/login',
+      callbackUrl: '/',
       redirect: true 
     }).then(() => {
       console.log('Landing page logout successful')

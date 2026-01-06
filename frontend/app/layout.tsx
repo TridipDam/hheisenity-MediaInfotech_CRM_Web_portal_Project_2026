@@ -30,8 +30,9 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { data: session } = useSession()
   
-  const isAuthPage = pathname === '/landing' || pathname === '/login'
-  const isEmployeePage = pathname === '/employee-attendance'
+  // Pages that should not show sidebar (public/auth pages)
+  const isAuthPage = pathname === '/' || pathname === '/landing' || pathname === '/login'
+  const isEmployeePage = pathname === '/employee-attendance' || pathname === '/staff-portal'
   
   // Check if user is employee
   const isEmployee = session?.user && (session.user as CustomUser).userType === 'employee'
@@ -41,8 +42,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     return <div className="min-h-screen">{children}</div>
   }
 
-  // For employees, only show sidebar on allowed pages (landing, attendance)
-  if (isEmployee && pathname !== '/landing' && pathname !== '/attendance') {
+  // For employees, only show sidebar on allowed pages (but not on staff-portal or employee-attendance)
+  if (isEmployee && pathname !== '/landing' && pathname !== '/attendance' && pathname !== '/staff-portal' && pathname !== '/employee-attendance') {
     return <div className="min-h-screen">{children}</div>
   }
 

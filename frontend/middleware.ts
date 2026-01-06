@@ -12,18 +12,13 @@ export default withAuth(
 
       // Employee/Staff access restrictions
       if (userType === 'employee') {
-        // Allow employees to access only landing and employee-attendance pages
-        const allowedEmployeePaths = ['/landing', '/employee-attendance']
+        // Allow employees to access staff-portal and employee-attendance pages
+        const allowedEmployeePaths = ['/staff-portal', '/employee-attendance']
         const isAllowedPath = allowedEmployeePaths.some(path => pathname.startsWith(path))
         
-        if (!isAllowedPath && pathname !== '/') {
-          // Redirect employees to landing page if they try to access restricted areas
-          return NextResponse.redirect(new URL('/landing', req.url))
-        }
-        
-        // Redirect employees from root to landing
-        if (pathname === '/') {
-          return NextResponse.redirect(new URL('/landing', req.url))
+        if (!isAllowedPath) {
+          // Redirect employees to staff-portal if they try to access restricted areas
+          return NextResponse.redirect(new URL('/staff-portal', req.url))
         }
       }
 
@@ -33,16 +28,19 @@ export default withAuth(
         if (pathname === '/landing') {
           return NextResponse.redirect(new URL('/dashboard', req.url))
         }
-        // Redirect admins from root to dashboard
-        if (pathname === '/') {
-          return NextResponse.redirect(new URL('/dashboard', req.url))
-        }
       }
     } else {
-      // Not authenticated - redirect to landing for most pages
+      // Not authenticated - redirect to root for protected pages
       const publicPaths = ['/login', '/landing']
+      
+      // Redirect /landing to root for consistency
+      if (pathname === '/landing') {
+        return NextResponse.redirect(new URL('/', req.url))
+      }
+      
+      // Redirect other protected pages to root
       if (!publicPaths.includes(pathname)) {
-        return NextResponse.redirect(new URL('/landing', req.url))
+        return NextResponse.redirect(new URL('/', req.url))
       }
     }
   },
@@ -73,6 +71,6 @@ export const config = {
     "/payroll/:path*",
     "/stock/:path*",
     "/tickets/:path*",
-    "/"
+    "/staff-portal/:path*"
   ]
 }

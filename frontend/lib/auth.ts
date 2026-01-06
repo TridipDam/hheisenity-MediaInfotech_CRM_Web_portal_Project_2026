@@ -86,10 +86,14 @@ const authOptions: AuthOptions = {
       }
       return session
     },
-    async signIn() {
+    async signIn({ user }) {
       return true
     },
     async redirect({ url, baseUrl }) {
+      // Handle logout redirects
+      if (url.includes('signout') || url.includes('logout')) {
+        return baseUrl
+      }
       // Allows relative callback URLs
       if (url.startsWith("/")) return `${baseUrl}${url}`
       // Allows callback URLs on the same origin
@@ -99,7 +103,7 @@ const authOptions: AuthOptions = {
   },
   pages: {
     signIn: "/login",
-    signOut: "/login"
+    signOut: "/"
   },
   session: {
     strategy: "jwt" as const

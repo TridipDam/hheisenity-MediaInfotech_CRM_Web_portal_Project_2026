@@ -364,6 +364,7 @@ export async function createAttendanceRecord(data: {
   status: 'PRESENT' | 'LATE'
   locationText?: string
   bypassLocationValidation?: boolean
+  action?: 'check-in' | 'check-out' // Add action parameter
 }): Promise<AttendanceRecord> {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -395,23 +396,34 @@ export async function createAttendanceRecord(data: {
     const deviceString = `${deviceInfo.os} - ${deviceInfo.browser} - ${deviceInfo.device}`
     // Upsert admin-provided attendance immediately (admin trusting)
     if (existing && existing.locked) throw new Error('ATTENDANCE_LOCKED')
+    
+    const updateData: any = {
+      location: data.locationText,
+      ipAddress: data.ipAddress,
+      deviceInfo: deviceString,
+      photo: data.photo ?? existing?.photo,
+      status: data.status,
+      updatedAt: new Date()
+    }
+
+    // Handle check-in/check-out for admin entries
+    if (data.action === 'check-in') {
+      updateData.clockIn = new Date()
+    } else if (data.action === 'check-out') {
+      updateData.clockOut = new Date()
+    }
+
     const saved = existing
       ? await prisma.attendance.update({
           where: { id: existing.id },
-          data: {
-            location: data.locationText,
-            ipAddress: data.ipAddress,
-            deviceInfo: deviceString,
-            photo: data.photo ?? existing.photo,
-            status: data.status,
-            updatedAt: new Date()
-          }
+          data: updateData
         })
       : await prisma.attendance.create({
           data: {
             employeeId: employee.id,
             date: today,
-            clockIn: data.status === 'PRESENT' ? new Date() : null,
+            clockIn: data.action === 'check-in' ? new Date() : null,
+            clockOut: data.action === 'check-out' ? new Date() : null,
             latitude: null,
             longitude: null,
             location: data.locationText,
@@ -447,25 +459,36 @@ export async function createAttendanceRecord(data: {
     const deviceInfo = getDeviceInfo(data.userAgent)
     const deviceString = `${deviceInfo.os} - ${deviceInfo.browser} - ${deviceInfo.device}`
     if (existing && existing.locked) throw new Error('ATTENDANCE_LOCKED')
+    
+    const updateData: any = {
+      latitude: data.coordinates ? data.coordinates.latitude : existing?.latitude,
+      longitude: data.coordinates ? data.coordinates.longitude : existing?.longitude,
+      location: human,
+      ipAddress: data.ipAddress,
+      deviceInfo: deviceString,
+      photo: data.photo ?? existing?.photo,
+      status: data.status,
+      updatedAt: new Date()
+    }
+
+    // Handle check-in/check-out for bypass entries
+    if (data.action === 'check-in') {
+      updateData.clockIn = new Date()
+    } else if (data.action === 'check-out') {
+      updateData.clockOut = new Date()
+    }
+
     const saved = existing
       ? await prisma.attendance.update({
           where: { id: existing.id },
-          data: {
-            latitude: data.coordinates ? data.coordinates.latitude : existing.latitude,
-            longitude: data.coordinates ? data.coordinates.longitude : existing.longitude,
-            location: human,
-            ipAddress: data.ipAddress,
-            deviceInfo: deviceString,
-            photo: data.photo ?? existing.photo,
-            status: data.status,
-            updatedAt: new Date()
-          }
+          data: updateData
         })
       : await prisma.attendance.create({
           data: {
             employeeId: employee.id,
             date: today,
-            clockIn: data.status === 'PRESENT' ? new Date() : null,
+            clockIn: data.action === 'check-in' ? new Date() : null,
+            clockOut: data.action === 'check-out' ? new Date() : null,
             latitude: data.coordinates ? data.coordinates.latitude : null,
             longitude: data.coordinates ? data.coordinates.longitude : null,
             location: human,
@@ -589,27 +612,46 @@ export async function createAttendanceRecord(data: {
     throw new Error('ATTENDANCE_LOCKED')
   }
 
+  // Prepare update data based on action
+  const updateData: any = {
+    latitude: data.coordinates?.latitude ?? existing?.latitude,
+    longitude: data.coordinates?.longitude ?? existing?.longitude,
+    location: humanReadable,
+    ipAddress: data.ipAddress,
+    deviceInfo: deviceString,
+    photo: data.photo ?? existing?.photo,
+    status: data.status,
+    updatedAt: new Date(),
+    attemptCount: 'ZERO' // reset attempts on success
+  }
+
+  // Handle check-in/check-out logic
+  if (data.action === 'check-in') {
+    updateData.clockIn = new Date()
+  } else if (data.action === 'check-out') {
+    updateData.clockOut = new Date()
+    // For check-out, preserve existing clockIn if it exists
+    if (!existing?.clockIn) {
+      updateData.clockIn = new Date() // Set clockIn to current time if not already set
+    }
+  } else {
+    // Default behavior for backward compatibility
+    if (!existing?.clockIn) {
+      updateData.clockIn = data.status === 'PRESENT' ? new Date() : null
+    }
+  }
+
   const saved = existing
     ? await prisma.attendance.update({
         where: { id: existing.id },
-        data: {
-          latitude: data.coordinates?.latitude ?? existing.latitude,
-          longitude: data.coordinates?.longitude ?? existing.longitude,
-          location: humanReadable,
-          ipAddress: data.ipAddress,
-          deviceInfo: deviceString,
-          photo: data.photo ?? existing.photo,
-          status: data.status,
-          clockIn: data.status === 'PRESENT' && !existing.clockIn ? new Date() : existing.clockIn,
-          updatedAt: new Date(),
-          attemptCount: 'ZERO' // reset attempts on success
-        }
+        data: updateData
       })
     : await prisma.attendance.create({
         data: {
           employeeId: employee.id,
           date: today,
-          clockIn: data.status === 'PRESENT' ? new Date() : null,
+          clockIn: data.action === 'check-in' ? new Date() : null,
+          clockOut: data.action === 'check-out' ? new Date() : null,
           latitude: data.coordinates?.latitude ?? null,
           longitude: data.coordinates?.longitude ?? null,
           location: humanReadable,

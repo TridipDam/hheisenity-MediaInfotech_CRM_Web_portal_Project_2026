@@ -105,7 +105,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     const handleLogout = () => {
         console.log('Logout clicked')
         signOut({ 
-            callbackUrl: '/landing',
+            callbackUrl: '/',
             redirect: true 
         }).then(() => {
             console.log('Logout successful')

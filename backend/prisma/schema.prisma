@@ -73,6 +73,7 @@ model Attendance {
   id           String           @id @default(cuid())
   date         DateTime         @db.Date
   clockIn      DateTime?
+  clockOut     DateTime?
   status       AttendanceStatus @default(PRESENT)
   location     String?
   ipAddress    String?

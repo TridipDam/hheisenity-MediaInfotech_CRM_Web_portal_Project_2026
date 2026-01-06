@@ -8,6 +8,7 @@ export type CreateAttendanceRequest = {
     photo?: string
     status?: 'PRESENT' | 'LATE'
     location?: string // Add location text field
+    action?: 'check-in' | 'check-out' // Add action parameter
 }
 
 export type CreateAttendanceResponse = {
@@ -195,6 +196,7 @@ export type AttendanceRecord = {
     isTeamLeader: boolean
     date: string
     clockIn?: string
+    clockOut?: string
     status: 'PRESENT' | 'ABSENT' | 'LATE' | 'MARKDOWN'
     location?: string
     latitude?: number

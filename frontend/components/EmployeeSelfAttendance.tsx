@@ -26,6 +26,7 @@ import {
   getRemainingAttempts, 
   getAssignedLocation,
   getLocationInfo,
+  getAttendanceRecords,
   AssignedLocationResponse 
 } from "@/lib/server-api"
 
@@ -60,6 +61,12 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
   const [cameraActive, setCameraActive] = useState(false)
   const [cameraLoading, setCameraLoading] = useState(false)
   const [attendanceMarked, setAttendanceMarked] = useState(false)
+  const [currentAttendanceStatus, setCurrentAttendanceStatus] = useState<{
+    hasCheckedIn: boolean
+    hasCheckedOut: boolean
+    clockIn?: string
+    clockOut?: string
+  } | null>(null)
   const [employeeId, setEmployeeId] = useState("")
   const [currentTime, setCurrentTime] = useState(new Date())
   const [ipAddress, setIpAddress] = useState<string>("")
@@ -111,6 +118,41 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
       setLocationError('Failed to get your current location. Please enable location services.')
     } finally {
       setLocationLoading(false)
+    }
+  }
+
+  // Check current attendance status
+  const checkCurrentAttendanceStatus = async (empId: string) => {
+    if (!empId.trim()) return
+    
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const response = await getAttendanceRecords({
+        employeeId: empId,
+        date: today,
+        limit: 1
+      })
+      
+      if (response.success && response.data?.records && response.data.records.length > 0) {
+        const record = response.data.records[0]
+        setCurrentAttendanceStatus({
+          hasCheckedIn: !!record.clockIn,
+          hasCheckedOut: !!record.clockOut,
+          clockIn: record.clockIn,
+          clockOut: record.clockOut
+        })
+      } else {
+        setCurrentAttendanceStatus({
+          hasCheckedIn: false,
+          hasCheckedOut: false
+        })
+      }
+    } catch (error) {
+      console.error('Error checking attendance status:', error)
+      setCurrentAttendanceStatus({
+        hasCheckedIn: false,
+        hasCheckedOut: false
+      })
     }
   }
 
@@ -177,10 +219,12 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
     if (employeeId.trim()) {
       checkAttempts(employeeId.trim())
       checkAssignedLocation(employeeId.trim())
+      checkCurrentAttendanceStatus(employeeId.trim())
     } else {
       setRemainingAttempts(3)
       setIsLocked(false)
       setAssignedLocation(null)
+      setCurrentAttendanceStatus(null)
     }
   }, [employeeId])
 
@@ -286,6 +330,24 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
       return
     }
 
+    // Check if trying to check-in when already checked in
+    if (type === 'check-in' && currentAttendanceStatus?.hasCheckedIn) {
+      alert('You have already checked in today.')
+      return
+    }
+
+    // Check if trying to check-out without checking in first
+    if (type === 'check-out' && !currentAttendanceStatus?.hasCheckedIn) {
+      alert('You need to check in first before checking out.')
+      return
+    }
+
+    // Check if trying to check-out when already checked out
+    if (type === 'check-out' && currentAttendanceStatus?.hasCheckedOut) {
+      alert('You have already checked out today.')
+      return
+    }
+
     setIsLoading(true)
     
     try {
@@ -311,7 +373,8 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
         latitude: locationData?.coordinates.latitude,
         longitude: locationData?.coordinates.longitude,
         photo: photoData,
-        status: type === 'check-in' ? 'PRESENT' : 'PRESENT' 
+        status: type === 'check-in' ? 'PRESENT' : 'PRESENT',
+        action: type // Pass the action (check-in or check-out)
       })
 
       if (response.success) {
@@ -329,13 +392,25 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
         setAttendanceMarked(true)
         stopCamera()
 
+        // Update current attendance status
+        if (type === 'check-in') {
+          setCurrentAttendanceStatus({
+            hasCheckedIn: true,
+            hasCheckedOut: false,
+            clockIn: new Date().toISOString()
+          })
+        } else if (type === 'check-out') {
+          setCurrentAttendanceStatus(prev => ({
+            ...prev!,
+            hasCheckedOut: true,
+            clockOut: new Date().toISOString()
+          }))
+        }
+
         // Reset after 5 seconds
         setTimeout(() => {
           setAttendanceMarked(false)
-          setEmployeeId("")
-          setRemainingAttempts(3)
-          setIsLocked(false)
-          setAssignedLocation(null)
+          // Don't reset employee ID and status after successful attendance
         }, 5000)
       } else {
         throw new Error(response.error || 'Failed to mark attendance')
@@ -413,6 +488,49 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
             </div>
           </CardContent>
         </Card>
+
+        {/* Current Attendance Status */}
+        {employeeId.trim() && currentAttendanceStatus && (
+          <Card className="bg-white/80 backdrop-blur-sm border border-gray-200 shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-600" />
+                Today's Attendance Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Check-in Status:</span>
+                    <Badge variant={currentAttendanceStatus.hasCheckedIn ? "default" : "secondary"}>
+                      {currentAttendanceStatus.hasCheckedIn ? "Checked In" : "Not Checked In"}
+                    </Badge>
+                  </div>
+                  {currentAttendanceStatus.clockIn && (
+                    <p className="text-xs text-gray-600">
+                      Time: {new Date(currentAttendanceStatus.clockIn).toLocaleTimeString()}
+                    </p>
+                  )}
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">Check-out Status:</span>
+                    <Badge variant={currentAttendanceStatus.hasCheckedOut ? "default" : "secondary"}>
+                      {currentAttendanceStatus.hasCheckedOut ? "Checked Out" : "Not Checked Out"}
+                    </Badge>
+                  </div>
+                  {currentAttendanceStatus.clockOut && (
+                    <p className="text-xs text-gray-600">
+                      Time: {new Date(currentAttendanceStatus.clockOut).toLocaleTimeString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Location Validation Status */}
         {employeeId.trim() && (
@@ -653,7 +771,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                     <div className="grid grid-cols-2 gap-3">
                       <Button
                         onClick={() => markAttendance('check-in')}
-                        disabled={!canMarkAttendance()}
+                        disabled={!canMarkAttendance() || currentAttendanceStatus?.hasCheckedIn}
                         className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50"
                         size="lg"
                       >
@@ -665,13 +783,13 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                         ) : (
                           <>
                             <CheckCircle className="h-4 w-4 mr-2" />
-                            Check In
+                            {currentAttendanceStatus?.hasCheckedIn ? "Already Checked In" : "Check In"}
                           </>
                         )}
                       </Button>
                       <Button
                         onClick={() => markAttendance('check-out')}
-                        disabled={!canMarkAttendance()}
+                        disabled={!canMarkAttendance() || !currentAttendanceStatus?.hasCheckedIn || currentAttendanceStatus?.hasCheckedOut}
                         className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
                         size="lg"
                       >
@@ -683,7 +801,8 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                         ) : (
                           <>
                             <XCircle className="h-4 w-4 mr-2" />
-                            Check Out
+                            {currentAttendanceStatus?.hasCheckedOut ? "Already Checked Out" : 
+                             !currentAttendanceStatus?.hasCheckedIn ? "Check In First" : "Check Out"}
                           </>
                         )}
                       </Button>

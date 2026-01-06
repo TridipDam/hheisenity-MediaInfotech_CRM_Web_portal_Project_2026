@@ -41,7 +41,7 @@ export default function LoginPage() {
       } else {
         // Redirect based on user type
         if (userType === "employee") {
-          router.push("/landing")
+          router.push("/staff-portal")
         } else {
           router.push("/dashboard")
         }
