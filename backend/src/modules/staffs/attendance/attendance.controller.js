@@ -1,6 +1,7 @@
 import { getDeviceInfo } from '@/utils/deviceinfo';
 import { getHumanReadableLocation, getLocationFromCoordinates } from '@/utils/geolocation';
-import { createAttendanceRecord } from './attendance.service';
+import { createAttendanceRecord, calculateWorkAndOvertimeFromAttendance, formatMinutes } from './attendance.service';
+
 export const createAttendance = async (req, res) => {
     try {
         const { employeeId, latitude, longitude, photo, status = 'PRESENT', location } = req.body;
@@ -359,44 +360,59 @@ export const getAttendanceRecords = async (req, res) => {
             where: whereClause
         });
         // Format the response
-        const formattedRecords = attendanceRecords.map(record => ({
-            id: record.id,
-            employeeId: record.employee.employeeId,
-            employeeName: record.employee.name,
-            email: record.employee.email,
-            phone: record.employee.phone,
-            teamId: record.employee.teamId,
-            isTeamLeader: record.employee.isTeamLeader,
-            date: record.date.toISOString().split('T')[0],
-            clockIn: record.clockIn?.toISOString(),
-            status: record.status,
-            location: record.location,
-            latitude: record.latitude ? parseFloat(record.latitude.toString()) : null,
-            longitude: record.longitude ? parseFloat(record.longitude.toString()) : null,
-            ipAddress: record.ipAddress,
-            deviceInfo: record.deviceInfo,
-            photo: record.photo,
-            locked: record.locked,
-            lockedReason: record.lockedReason,
-            attemptCount: record.attemptCount,
-            taskStartTime: record.taskStartTime,
-            taskEndTime: record.taskEndTime,
-            taskLocation: record.taskLocation,
-            assignedTask: record.assignedTask ? {
-                id: record.assignedTask.id,
-                title: record.assignedTask.title,
-                description: record.assignedTask.description,
-                category: record.assignedTask.category,
-                location: record.assignedTask.location,
-                startTime: record.assignedTask.startTime,
-                endTime: record.assignedTask.endTime,
-                assignedBy: record.assignedTask.assignedBy,
-                assignedAt: record.assignedTask.assignedAt.toISOString(),
-                status: record.assignedTask.status
-            } : undefined,
-            createdAt: record.createdAt.toISOString(),
-            updatedAt: record.updatedAt.toISOString()
-        }));
+        const formattedRecords = attendanceRecords.map(record => {
+            // Use the backend helpers (they accept Date | null)
+            const time = calculateWorkAndOvertimeFromAttendance(record.clockIn, record.clockOut);
+
+            const workedHoursFormatted = time ? formatMinutes(time.workedMinutes) : '-';
+            const overtimeFormatted = time ? formatMinutes(time.overtimeMinutes) : '-';
+
+            return {
+                id: record.id,
+                employeeId: record.employee.employeeId,
+                employeeName: record.employee.name,
+                email: record.employee.email,
+                phone: record.employee.phone,
+                teamId: record.employee.teamId,
+                isTeamLeader: record.employee.isTeamLeader,
+                date: record.date.toISOString().split('T')[0],
+                clockIn: record.clockIn?.toISOString(),
+                // newly added clockOut (frontend needs it)
+                clockOut: record.clockOut?.toISOString() ?? null,
+                status: record.status,
+                location: record.location,
+                latitude: record.latitude ? parseFloat(record.latitude.toString()) : null,
+                longitude: record.longitude ? parseFloat(record.longitude.toString()) : null,
+                ipAddress: record.ipAddress,
+                deviceInfo: record.deviceInfo,
+                photo: record.photo,
+                locked: record.locked,
+                lockedReason: record.lockedReason,
+                attemptCount: record.attemptCount,
+                taskStartTime: record.taskStartTime,
+                taskEndTime: record.taskEndTime,
+                taskLocation: record.taskLocation,
+                assignedTask: record.assignedTask ? {
+                    id: record.assignedTask.id,
+                    title: record.assignedTask.title,
+                    description: record.assignedTask.description,
+                    category: record.assignedTask.category,
+                    location: record.assignedTask.location,
+                    startTime: record.assignedTask.startTime,
+                    endTime: record.assignedTask.endTime,
+                    assignedBy: record.assignedTask.assignedBy,
+                    assignedAt: record.assignedTask.assignedAt.toISOString(),
+                    status: record.assignedTask.status
+                } : undefined,
+                workedHours: workedHoursFormatted,          
+                overtime: overtimeFormatted,
+                workedMinutes: time ? time.workedMinutes : 0,
+                overtimeMinutes: time ? time.overtimeMinutes : 0,
+                createdAt: record.createdAt.toISOString(),
+                updatedAt: record.updatedAt.toISOString()
+            };
+        });
+
         return res.status(200).json({
             success: true,
             data: {

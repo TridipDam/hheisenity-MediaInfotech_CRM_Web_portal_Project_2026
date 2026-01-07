@@ -214,6 +214,8 @@ export type AttendanceRecord = {
     createdAt: string
     updatedAt: string
     assignedTask?: AssignedTask
+    workedHours?: string
+    overtime?: string
 }
 
 export type AssignedTask = {
@@ -776,6 +778,39 @@ export async function assignTask(task: CreateTaskRequest): Promise<CreateTaskRes
     return response
   } catch (error) {
     console.error('assignTask error:', error)
+    throw error
+  }
+}
+
+export type GetEmployeeTasksResponse = {
+  success: boolean
+  data?: {
+    tasks: AssignedTask[]
+    total: number
+  }
+  error?: string
+}
+
+export async function getEmployeeTasks(employeeId: string, status?: string): Promise<GetEmployeeTasksResponse> {
+  try {
+    const searchParams = new URLSearchParams()
+    if (status) searchParams.append('status', status)
+    
+    const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/tasks/employee/${employeeId}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
+    
+    const res = await fetch(url, {
+      cache: 'no-store'
+    })
+
+    const response = await res.json()
+
+    if (!res.ok) {
+      throw new Error(response.error || `Failed to get employee tasks: ${res.status}`)
+    }
+
+    return response
+  } catch (error) {
+    console.error('getEmployeeTasks error:', error)
     throw error
   }
 }

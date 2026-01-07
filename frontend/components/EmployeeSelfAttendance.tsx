@@ -18,7 +18,7 @@ import {
   Clock,
   MapPinIcon
 } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 import { 
   DeviceInfo, 
   LocationInfo, 
@@ -27,7 +27,9 @@ import {
   getAssignedLocation,
   getLocationInfo,
   getAttendanceRecords,
-  AssignedLocationResponse 
+  getEmployeeTasks,
+  AssignedLocationResponse,
+  AssignedTask
 } from "@/lib/server-api"
 
 interface CustomUser {
@@ -66,6 +68,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
     hasCheckedOut: boolean
     clockIn?: string
     clockOut?: string
+    hasAdminRecord?: boolean // Track if there's an admin-created record
   } | null>(null)
   const [employeeId, setEmployeeId] = useState("")
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -75,6 +78,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
   const [remainingAttempts, setRemainingAttempts] = useState<number>(3)
   const [isLocked, setIsLocked] = useState(false)
   const [assignedLocation, setAssignedLocation] = useState<AssignedLocationResponse['data'] | null>(null)
+  const [currentTasks, setCurrentTasks] = useState<AssignedTask[]>([])
   const [locationError, setLocationError] = useState<string>("")
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -122,7 +126,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
   }
 
   // Check current attendance status
-  const checkCurrentAttendanceStatus = async (empId: string) => {
+  const checkCurrentAttendanceStatus = useCallback(async (empId: string) => {
     if (!empId.trim()) return
     
     try {
@@ -136,19 +140,35 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
       if (response.success && response.data?.records && response.data.records.length > 0) {
         const record = response.data.records[0]
         // Only consider it checked in/out if the employee did it themselves (source: 'SELF')
+        // Admin-created records (source: 'ADMIN') should not prevent employee from checking in
         const selfCheckedIn = record.source === 'SELF' && !!record.clockIn
         const selfCheckedOut = record.source === 'SELF' && !!record.clockOut
+        const hasAdminRecord = record.source === 'ADMIN' // Track admin-created records
+        
+        // Check if there are new tasks assigned after the last check-out
+        let canCheckInForNewTask = false
+        if (selfCheckedOut && currentTasks.length > 0) {
+          // If employee has checked out but there are pending tasks, allow check-in for new task
+          const lastCheckOut = new Date(record.clockOut!)
+          const hasNewTasks = currentTasks.some(task => {
+            const taskAssignedAt = new Date(task.assignedAt)
+            return taskAssignedAt > lastCheckOut
+          })
+          canCheckInForNewTask = hasNewTasks
+        }
         
         setCurrentAttendanceStatus({
-          hasCheckedIn: selfCheckedIn,
-          hasCheckedOut: selfCheckedOut,
+          hasCheckedIn: selfCheckedIn && !canCheckInForNewTask, // Allow check-in if there's a new task
+          hasCheckedOut: selfCheckedOut && !canCheckInForNewTask, // Reset check-out status for new task
           clockIn: selfCheckedIn ? record.clockIn : undefined,
-          clockOut: selfCheckedOut ? record.clockOut : undefined
+          clockOut: selfCheckedOut ? record.clockOut : undefined,
+          hasAdminRecord: hasAdminRecord
         })
       } else {
         setCurrentAttendanceStatus({
           hasCheckedIn: false,
-          hasCheckedOut: false
+          hasCheckedOut: false,
+          hasAdminRecord: false
         })
       }
     } catch (error) {
@@ -158,7 +178,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
         hasCheckedOut: false
       })
     }
-  }
+  }, [currentTasks])
 
   // Check remaining attempts when employee ID changes
   const checkAttempts = async (empId: string) => {
@@ -189,6 +209,23 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
     } catch (error) {
       console.error('Error getting assigned location:', error)
       setAssignedLocation(null)
+    }
+  }
+
+  // Get current tasks for employee
+  const checkCurrentTasks = async (empId: string) => {
+    if (!empId.trim()) return
+    
+    try {
+      const response = await getEmployeeTasks(empId, 'PENDING')
+      if (response.success && response.data) {
+        setCurrentTasks(response.data.tasks)
+      } else {
+        setCurrentTasks([])
+      }
+    } catch (error) {
+      console.error('Error getting current tasks:', error)
+      setCurrentTasks([])
     }
   }
 
@@ -223,14 +260,22 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
     if (employeeId.trim()) {
       checkAttempts(employeeId.trim())
       checkAssignedLocation(employeeId.trim())
-      checkCurrentAttendanceStatus(employeeId.trim())
+      checkCurrentTasks(employeeId.trim())
     } else {
       setRemainingAttempts(3)
       setIsLocked(false)
       setAssignedLocation(null)
+      setCurrentTasks([])
       setCurrentAttendanceStatus(null)
     }
   }, [employeeId])
+
+  // Check attendance status when tasks change
+  useEffect(() => {
+    if (employeeId.trim()) {
+      checkCurrentAttendanceStatus(employeeId.trim())
+    }
+  }, [currentTasks, employeeId, checkCurrentAttendanceStatus])
 
   // Cleanup camera stream on unmount
   useEffect(() => {
@@ -409,6 +454,12 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
             hasCheckedOut: true,
             clockOut: new Date().toISOString()
           }))
+          // Refresh tasks after check-out to see if there are new tasks
+          if (employeeId.trim()) {
+            setTimeout(() => {
+              checkCurrentTasks(employeeId.trim())
+            }, 1000)
+          }
         }
 
         // Reset after 5 seconds

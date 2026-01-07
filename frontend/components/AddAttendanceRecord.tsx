@@ -5,15 +5,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Clock, Loader2, CheckCircle, AlertCircle, User, Camera, Calendar, Info, ArrowLeft, Save, Plus } from "lucide-react"
-import { createAttendance, CreateAttendanceRequest, AttendanceRecord, createFieldEngineer } from "@/lib/server-api"
+import { Clock, Loader2, CheckCircle, AlertCircle, User, Info, ArrowLeft, Save, Plus } from "lucide-react"
+import { createFieldEngineer } from "@/lib/server-api"
 import { EmployeeIdGenerator } from "@/components/EmployeeIdGenerator"
 
 interface AddAttendanceRecordProps {
-  onRecordAdded?: (record: AttendanceRecord) => void
+  onRecordAdded?: () => void // Changed to just notify without passing record
   onBack?: () => void
 }
 
@@ -28,9 +27,7 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
     email: '',
     password: '',
     phone: '',
-    isTeamLeader: false,
-    status: 'PRESENT' as 'PRESENT' | 'LATE',
-    photo: ''
+    isTeamLeader: false
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,66 +74,26 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
         return
       }
 
-      // Then, create the attendance record
-      const attendanceData: CreateAttendanceRequest = {
-        employeeId: formData.employeeId.trim(),
-        latitude: 0, // Default coordinates for admin entries
-        longitude: 0,
-        status: formData.status,
-        location: 'Office', // Default location for admin entries
-        photo: formData.photo || undefined
-      }
-
-      const response = await createAttendance(attendanceData)
+      // Success - employee created (no attendance record)
+      onRecordAdded?.() // Notify parent component
+      setShowSuccess(true)
       
-      if (response.success && response.data) {
-        // Convert the response to AttendanceRecord format
-        const newRecord: AttendanceRecord = {
-          id: `temp-${Date.now()}`, // Temporary ID
-          employeeId: response.data.employeeId,
-          employeeName: formData.employeeName,
-          email: formData.email,
-          phone: formData.phone,
-          teamId: '',
-          isTeamLeader: formData.isTeamLeader,
-          date: new Date().toISOString().split('T')[0],
-          clockIn: response.data.timestamp,
-          status: response.data.status,
-          location: 'Office',
-          latitude: 0,
-          longitude: 0,
-          ipAddress: response.data.ipAddress,
-          deviceInfo: response.data.deviceInfo,
-          photo: response.data.photo,
-          locked: false,
-          lockedReason: '',
-          attemptCount: 'ZERO',
-          createdAt: response.data.timestamp,
-          updatedAt: response.data.timestamp
-        }
-
-        onRecordAdded?.(newRecord)
-        setShowSuccess(true)
-        
-        // Reset form after success
-        setTimeout(() => {
-          setFormData({
-            employeeId: '',
-            employeeName: '',
-            email: '',
-            password: '',
-            phone: '',
-            isTeamLeader: false,
-            status: 'PRESENT',
-            photo: ''
-          })
-          setShowSuccess(false)
-          onBack?.()
-        }, 2000)
-      }
+      // Reset form after success
+      setTimeout(() => {
+        setFormData({
+          employeeId: '',
+          employeeName: '',
+          email: '',
+          password: '',
+          phone: '',
+          isTeamLeader: false
+        })
+        setShowSuccess(false)
+        onBack?.()
+      }, 2000)
     } catch (error) {
-      console.error('Error creating field engineer and attendance:', error)
-      setError(error instanceof Error ? error.message : 'Failed to create field engineer and attendance record')
+      console.error('Error creating field engineer:', error)
+      setError(error instanceof Error ? error.message : 'Failed to create field engineer')
     } finally {
       setLoading(false)
     }
@@ -156,8 +113,8 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Add Attendance Record</h1>
-              <p className="text-gray-600 mt-1">Create a new attendance record for an employee</p>
+              <h1 className="text-3xl font-bold text-gray-900">Add New Employee</h1>
+              <p className="text-gray-600 mt-1">Create a new field engineer account</p>
             </div>
           </div>
         </div>
@@ -171,9 +128,9 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                 </div>
                 <div className="text-center space-y-3">
                   <h3 className="text-2xl font-semibold text-green-900">Success!</h3>
-                  <p className="text-green-700 text-lg">Attendance record has been created successfully.</p>
+                  <p className="text-green-700 text-lg">Employee account has been created successfully.</p>
                   <Badge className="bg-green-100 text-green-800 border-green-200 text-sm px-4 py-2">
-                    Record Added
+                    Employee Added
                   </Badge>
                 </div>
               </CardContent>
@@ -290,38 +247,6 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                   </CardContent>
                 </Card>
 
-
-
-                {/* Photo Section */}
-                <Card className="border-gray-200 shadow-sm">
-                  <CardHeader className="pb-6">
-                    <CardTitle className="flex items-center gap-3 text-xl">
-                      <div className="p-2 bg-purple-50 rounded-lg">
-                        <Camera className="h-5 w-5 text-purple-600" />
-                      </div>
-                      Photo (Optional)
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div className="space-y-3">
-                      <Label htmlFor="photo" className="text-base font-medium text-gray-700">
-                        Attendance Photo
-                      </Label>
-                      <Textarea
-                        id="photo"
-                        placeholder="Base64 encoded photo data (optional)"
-                        value={formData.photo}
-                        onChange={(e) => setFormData(prev => ({ ...prev, photo: e.target.value }))}
-                        className="border-gray-300 focus:border-blue-500 focus:ring-blue-500 min-h-[120px] resize-none text-base"
-                      />
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Info className="h-4 w-4" />
-                        <span>You can paste base64 encoded image data here</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
                 {/* Action Buttons */}
                 <div className="flex gap-4 pt-6">
                   <Button
@@ -342,12 +267,12 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                     {loading ? (
                       <>
                         <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                        Creating Record...
+                        Creating Employee...
                       </>
                     ) : (
                       <>
                         <Save className="h-5 w-5 mr-2" />
-                        Create Record
+                        Create Employee
                       </>
                     )}
                   </Button>
@@ -361,7 +286,7 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                 {/* Preview Card */}
                 <Card className="border-gray-200 shadow-sm">
                   <CardHeader className="pb-4">
-                    <CardTitle className="text-lg">Record Preview</CardTitle>
+                    <CardTitle className="text-lg">Employee Preview</CardTitle>
                   </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-3 text-sm">
@@ -384,28 +309,16 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                       </span>
                     </div>
                     <div className="flex justify-between">
+                      <span className="text-gray-500">Phone:</span>
+                      <span className="font-medium text-gray-900">
+                        {formData.phone || 'Not specified'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
                       <span className="text-gray-500">Role:</span>
                       <Badge className="bg-purple-100 text-purple-800">
                         {formData.isTeamLeader ? 'Team Leader' : 'Field Engineer'}
                       </Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Status:</span>
-                      <Badge className={formData.status === 'PRESENT' ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}>
-                        {formData.status}
-                      </Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Date:</span>
-                      <span className="font-medium text-gray-900">
-                        {new Date().toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Time:</span>
-                      <span className="font-medium text-gray-900">
-                        {new Date().toLocaleTimeString()}
-                      </span>
                     </div>
                   </div>
                 </CardContent>
@@ -430,7 +343,7 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                       </div>
                       <div>
                         <p className="text-sm font-medium text-blue-900">New Field Engineer</p>
-                        <p className="text-xs text-blue-700 mt-1">Creates both employee and attendance record</p>
+                        <p className="text-xs text-blue-700 mt-1">Creates employee account only - no attendance</p>
                       </div>
                     </div>
                     
@@ -439,18 +352,18 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                         <Clock className="h-3 w-3 text-green-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-blue-900">Automatic Timestamp</p>
-                        <p className="text-xs text-blue-700 mt-1">Time will be recorded automatically when you save</p>
+                        <p className="text-sm font-medium text-blue-900">Self Attendance</p>
+                        <p className="text-xs text-blue-700 mt-1">Employees must mark their own attendance</p>
                       </div>
                     </div>
                     
                     <div className="flex items-start gap-3 p-3 bg-white/60 rounded-lg border border-blue-200/50">
                       <div className="p-1 bg-purple-100 rounded-md shrink-0 mt-0.5">
-                        <Camera className="h-3 w-3 text-purple-600" />
+                        <User className="h-3 w-3 text-purple-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-blue-900">Photo Verification</p>
-                        <p className="text-xs text-blue-700 mt-1">Optional but helps verify attendance</p>
+                        <p className="text-sm font-medium text-blue-900">Login Credentials</p>
+                        <p className="text-xs text-blue-700 mt-1">Employee can login with email and password</p>
                       </div>
                     </div>
                   </div>

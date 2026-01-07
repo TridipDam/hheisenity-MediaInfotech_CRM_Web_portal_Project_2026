@@ -412,19 +412,29 @@ export async function createAttendanceRecord(data: {
       updateData.clockIn = new Date()
     } else if (data.action === 'check-out') {
       updateData.clockOut = new Date()
+    } else {
+      // Default behavior - set clockIn if not exists and status is PRESENT/LATE
+      if (!existing?.clockIn && (data.status === 'PRESENT' || data.status === 'LATE')) {
+        updateData.clockIn = new Date()
+      }
     }
 
     const saved = existing
       ? await prisma.attendance.update({
           where: { id: existing.id },
-          data: updateData
+          data: {
+            ...updateData,
+            // Preserve existing clockIn/clockOut when updating unless explicitly setting them
+            clockIn: updateData.clockIn !== undefined ? updateData.clockIn : existing.clockIn,
+            clockOut: updateData.clockOut !== undefined ? updateData.clockOut : existing.clockOut
+          }
         })
       : await prisma.attendance.create({
           data: {
             employeeId: employee.id,
             date: today,
-            clockIn: data.action === 'check-in' ? new Date() : null,
-            clockOut: data.action === 'check-out' ? new Date() : null,
+            clockIn: updateData.clockIn || (data.status === 'PRESENT' || data.status === 'LATE' ? new Date() : null),
+            clockOut: updateData.clockOut || null,
             latitude: null,
             longitude: null,
             location: data.locationText,
@@ -479,19 +489,29 @@ export async function createAttendanceRecord(data: {
       updateData.clockIn = new Date()
     } else if (data.action === 'check-out') {
       updateData.clockOut = new Date()
+    } else {
+      // Default behavior - set clockIn if not exists and status is PRESENT/LATE
+      if (!existing?.clockIn && (data.status === 'PRESENT' || data.status === 'LATE')) {
+        updateData.clockIn = new Date()
+      }
     }
 
     const saved = existing
       ? await prisma.attendance.update({
           where: { id: existing.id },
-          data: updateData
+          data: {
+            ...updateData,
+            // Preserve existing clockIn/clockOut when updating unless explicitly setting them
+            clockIn: updateData.clockIn !== undefined ? updateData.clockIn : existing.clockIn,
+            clockOut: updateData.clockOut !== undefined ? updateData.clockOut : existing.clockOut
+          }
         })
       : await prisma.attendance.create({
           data: {
             employeeId: employee.id,
             date: today,
-            clockIn: data.action === 'check-in' ? new Date() : null,
-            clockOut: data.action === 'check-out' ? new Date() : null,
+            clockIn: updateData.clockIn || (data.status === 'PRESENT' || data.status === 'LATE' ? new Date() : null),
+            clockOut: updateData.clockOut || null,
             latitude: data.coordinates ? data.coordinates.latitude : null,
             longitude: data.coordinates ? data.coordinates.longitude : null,
             location: human,
@@ -631,32 +651,46 @@ export async function createAttendanceRecord(data: {
   }
 
   // Handle check-in/check-out logic
+  // - check-in: Sets clockIn to current time
+  // - check-out: Sets clockOut to current time (preserves existing clockIn)
+  // - no action: Sets clockIn if not exists and status is PRESENT/LATE (backward compatibility)
   if (data.action === 'check-in') {
     updateData.clockIn = new Date()
+    // Don't modify clockOut on check-in
+    // If existing record is ADMIN-created, allow employee to override with their own check-in
+    if (existing && existing.source === 'ADMIN') {
+      updateData.clockOut = null // Reset clockOut for fresh employee check-in
+    }
   } else if (data.action === 'check-out') {
     updateData.clockOut = new Date()
-    // For check-out, preserve existing clockIn if it exists
-    if (!existing?.clockIn) {
-      updateData.clockIn = new Date() // Set clockIn to current time if not already set
+    // Preserve existing clockIn - don't overwrite it
+    // Only allow check-out if employee has checked in themselves
+    if (existing && existing.source === 'ADMIN' && !existing.clockIn) {
+      throw new Error('CANNOT_CHECKOUT_WITHOUT_CHECKIN')
     }
   } else {
-    // Default behavior for backward compatibility
-    if (!existing?.clockIn) {
-      updateData.clockIn = data.status === 'PRESENT' ? new Date() : null
+    // Default behavior - set clockIn if not exists and status is PRESENT/LATE
+    if (!existing?.clockIn && (data.status === 'PRESENT' || data.status === 'LATE')) {
+      updateData.clockIn = new Date()
     }
   }
 
   const saved = existing
     ? await prisma.attendance.update({
         where: { id: existing.id },
-        data: updateData
+        data: {
+          ...updateData,
+          // Preserve existing clockIn when updating unless explicitly setting it
+          clockIn: updateData.clockIn !== undefined ? updateData.clockIn : existing.clockIn,
+          clockOut: updateData.clockOut !== undefined ? updateData.clockOut : existing.clockOut
+        }
       })
     : await prisma.attendance.create({
         data: {
           employeeId: employee.id,
           date: today,
-          clockIn: data.action === 'check-in' ? new Date() : null,
-          clockOut: data.action === 'check-out' ? new Date() : null,
+          clockIn: updateData.clockIn || (data.status === 'PRESENT' || data.status === 'LATE' ? new Date() : null),
+          clockOut: updateData.clockOut || null,
           latitude: data.coordinates?.latitude ?? null,
           longitude: data.coordinates?.longitude ?? null,
           location: humanReadable,
@@ -721,3 +755,35 @@ export async function getTodayAssignedLocation(employeeId: string) {
 export const __test_helpers = {
   calculateDistanceMeters
 }
+
+const STANDARD_WORK_MINUTES = 8 * 60
+
+export function calculateWorkAndOvertimeFromAttendance(
+  clockIn?: Date | null,
+  clockOut?: Date | null
+): {
+  workedMinutes: number
+  overtimeMinutes: number
+} | null {
+  if (!clockIn || !clockOut) return null
+
+  const diffMs = clockOut.getTime() - clockIn.getTime()
+  if (diffMs <= 0) return null
+
+  const totalMinutes = Math.floor(diffMs / (1000 * 60))
+
+  const workedMinutes = Math.min(totalMinutes, STANDARD_WORK_MINUTES)
+  const overtimeMinutes = Math.max(totalMinutes - STANDARD_WORK_MINUTES, 0)
+
+  return {
+    workedMinutes,
+    overtimeMinutes
+  }
+}
+
+export function formatMinutes(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${h}h ${m}m`
+}
+
