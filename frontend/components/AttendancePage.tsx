@@ -29,7 +29,7 @@ import {
   X,
   UserPlus
 } from "lucide-react"
-import { getAttendanceRecords, getAllEmployees, AttendanceRecord, Employee, deleteAttendanceRecord } from "@/lib/server-api"
+import { getAttendanceRecords, getAllEmployees, getAllTeams, AttendanceRecord, Employee, Team, deleteAttendanceRecord, exportAttendanceToExcel, exportAttendanceToPDF, ExportParams } from "@/lib/server-api"
 
 interface DateRange {
   from: Date | null
@@ -79,6 +79,38 @@ const formatTime = (dateString?: string) => {
 
 const STANDARD_WORK_HOURS = 8
 
+// Team color mapping for visual distinction
+const TEAM_COLORS = [
+  'bg-blue-100 text-blue-700 border-blue-200',
+  'bg-green-100 text-green-700 border-green-200', 
+  'bg-purple-100 text-purple-700 border-purple-200',
+  'bg-orange-100 text-orange-700 border-orange-200',
+  'bg-pink-100 text-pink-700 border-pink-200',
+  'bg-indigo-100 text-indigo-700 border-indigo-200',
+  'bg-teal-100 text-teal-700 border-teal-200',
+  'bg-red-100 text-red-700 border-red-200'
+]
+
+const getTeamInfo = (teamId: string | undefined, teams: Team[]) => {
+  if (!teamId) {
+    return { name: 'No Team', color: 'bg-gray-100 text-gray-600 border-gray-200' }
+  }
+  
+  const team = teams.find(t => t.id === teamId)
+  if (!team) {
+    return { name: 'Unknown Team', color: 'bg-gray-100 text-gray-600 border-gray-200' }
+  }
+  
+  // Use team index to get consistent color
+  const teamIndex = teams.findIndex(t => t.id === teamId)
+  const colorIndex = teamIndex % TEAM_COLORS.length
+  
+  return {
+    name: team.name,
+    color: TEAM_COLORS[colorIndex]
+  }
+}
+
 const calculateWorkHours = (clockIn?: string, clockOut?: string) => {
   if (!clockIn) {
     return { worked: '-', overtime: '-' }
@@ -123,6 +155,7 @@ export function AttendancePage() {
     day: 'numeric'
   }))
   const [combinedData, setCombinedData] = React.useState<ExtendedAttendanceRecord[]>([])
+  const [teams, setTeams] = React.useState<Team[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [pagination, setPagination] = React.useState({
@@ -134,23 +167,35 @@ export function AttendancePage() {
   const [filters, setFilters] = React.useState({
     search: '',
     status: '',
+    teamId: '',
     dateRange: { from: new Date(), to: null } as DateRange
   })
   const [selectedEmployee, setSelectedEmployee] = React.useState<string | null>(null)
   const [selectedRecord, setSelectedRecord] = React.useState<ExtendedAttendanceRecord | null>(null)
   const [showViewDetails, setShowViewDetails] = React.useState(false)
   const [deleteLoading, setDeleteLoading] = React.useState<string | null>(null)
+  const [exportLoading, setExportLoading] = React.useState<'excel' | 'pdf' | null>(null)
 
   const fetchAttendanceData = React.useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
 
-      // Fetch all employees first
-      const employeesResponse = await getAllEmployees({ limit: 1000 }) // Get all employees
+      // Fetch all employees and teams first
+      const [employeesResponse, teamsResponse] = await Promise.all([
+        getAllEmployees({ limit: 1000 }), // Get all employees
+        getAllTeams() // Get all teams
+      ])
+      
       let employees: Employee[] = []
       if (employeesResponse.success && employeesResponse.data) {
         employees = employeesResponse.data.employees
+      }
+
+      let teamsData: Team[] = []
+      if (teamsResponse.success && teamsResponse.data) {
+        teamsData = teamsResponse.data
+        setTeams(teamsData)
       }
 
       const params: Record<string, string | number> = {
@@ -242,6 +287,11 @@ export function AttendancePage() {
           filteredCombined = filteredCombined.filter(record => record.status === filters.status)
         }
 
+        // Apply team filter
+        if (filters.teamId) {
+          filteredCombined = filteredCombined.filter(record => record.teamId === filters.teamId)
+        }
+
         setCombinedData(filteredCombined)
 
         // Update pagination based on combined data
@@ -266,7 +316,7 @@ export function AttendancePage() {
   // Reset pagination when filters change (except page)
   React.useEffect(() => {
     setPagination(prev => ({ ...prev, page: 1 }))
-  }, [filters.search, filters.status, filters.dateRange.from, filters.dateRange.to])
+  }, [filters.search, filters.status, filters.teamId, filters.dateRange.from, filters.dateRange.to])
 
   const handleRecordAdded = () => {
     // Employee added - refresh the attendance data
@@ -317,6 +367,50 @@ export function AttendancePage() {
       alert('Failed to delete attendance record')
     } finally {
       setDeleteLoading(null)
+    }
+  }
+
+  const handleExport = async (format: 'excel' | 'pdf') => {
+    try {
+      setExportLoading(format)
+      
+      // Prepare export parameters based on current filters
+      const exportParams: ExportParams = {}
+      
+      if (filters.dateRange.from) {
+        exportParams.dateFrom = filters.dateRange.from.toISOString().split('T')[0]
+      }
+      
+      if (filters.dateRange.to) {
+        exportParams.dateTo = filters.dateRange.to.toISOString().split('T')[0]
+      }
+      
+      // If we have a single date (from but no to), use it as both from and to
+      if (filters.dateRange.from && !filters.dateRange.to) {
+        const singleDate = filters.dateRange.from.toISOString().split('T')[0]
+        exportParams.dateFrom = singleDate
+        exportParams.dateTo = singleDate
+      }
+      
+      // If no date range is selected at all, default to today
+      if (!filters.dateRange.from && !filters.dateRange.to) {
+        exportParams.date = new Date().toISOString().split('T')[0]
+      }
+      
+      if (filters.status) {
+        exportParams.status = filters.status
+      }
+
+      if (format === 'excel') {
+        await exportAttendanceToExcel(exportParams)
+      } else {
+        await exportAttendanceToPDF(exportParams)
+      }
+    } catch (error) {
+      console.error(`Error exporting to ${format}:`, error)
+      alert(`Failed to export to ${format.toUpperCase()}`)
+    } finally {
+      setExportLoading(null)
     }
   }
 
@@ -441,10 +535,38 @@ export function AttendancePage() {
                   <UserPlus className="h-4 w-4 mr-2" />
                   Assign
                 </Button>
-                <Button variant="outline" className="border-gray-300 hover:bg-gray-50">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      className="border-gray-300 hover:bg-gray-50"
+                      disabled={exportLoading !== null}
+                    >
+                      {exportLoading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      {exportLoading ? `Exporting ${exportLoading.toUpperCase()}...` : 'Export'}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem 
+                      onClick={() => handleExport('excel')}
+                      disabled={exportLoading !== null}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export to Excel
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => handleExport('pdf')}
+                      disabled={exportLoading !== null}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export to PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   onClick={() => setShowAddForm(true)}
                   className="bg-blue-600 hover:bg-blue-700 shadow-sm"
@@ -630,10 +752,37 @@ export function AttendancePage() {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
+
+                  {/* Team Filter */}
+                  <div className="shrink-0">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="border-gray-300 hover:bg-gray-50 min-w-[120px]">
+                          <Users className="h-4 w-4 mr-2" />
+                          <span className="flex-1 text-left">
+                            {filters.teamId ? teams.find(t => t.id === filters.teamId)?.name || 'Team' : 'All Teams'}
+                          </span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-48">
+                        <DropdownMenuItem onClick={() => setFilters(prev => ({ ...prev, teamId: '' }))}>
+                          All Teams
+                        </DropdownMenuItem>
+                        {teams.map((team) => (
+                          <DropdownMenuItem 
+                            key={team.id}
+                            onClick={() => setFilters(prev => ({ ...prev, teamId: team.id }))}
+                          >
+                            {team.name}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
 
                 {/* Filter Summary Row */}
-                {(filters.search || filters.status || filters.dateRange.from) && (
+                {(filters.search || filters.status || filters.teamId || filters.dateRange.from) && (
                   <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                     <div className="flex items-center gap-2">
                       {filters.search && (
@@ -652,6 +801,16 @@ export function AttendancePage() {
                           <X
                             className="ml-1 h-3 w-3 cursor-pointer hover:text-green-900"
                             onClick={() => setFilters(prev => ({ ...prev, status: '' }))}
+                          />
+                        </Badge>
+                      )}
+
+                      {filters.teamId && (
+                        <Badge variant="secondary" className="bg-purple-50 text-purple-700 border-purple-200">
+                          Team: {teams.find(t => t.id === filters.teamId)?.name || 'Unknown'}
+                          <X
+                            className="ml-1 h-3 w-3 cursor-pointer hover:text-purple-900"
+                            onClick={() => setFilters(prev => ({ ...prev, teamId: '' }))}
                           />
                         </Badge>
                       )}
@@ -678,6 +837,7 @@ export function AttendancePage() {
                         setFilters({
                           search: '',
                           status: '',
+                          teamId: '',
                           dateRange: { from: today, to: null }
                         })
                         setCurrentDate(today.toLocaleDateString('en-US', {
@@ -741,6 +901,7 @@ export function AttendancePage() {
                   <TableHeader>
                     <TableRow className="bg-gray-50/80 border-b border-gray-200">
                       <TableHead className="w-[280px] py-4 px-6 font-semibold text-gray-700">Employee</TableHead>
+                      <TableHead className="w-[140px] py-4 px-6 font-semibold text-gray-700">Team</TableHead>
                       <TableHead className="w-[120px] py-4 px-6 font-semibold text-gray-700">Status</TableHead>
                       <TableHead className="w-[200px] py-4 px-6 font-semibold text-gray-700">
                         <div className="space-y-1">
@@ -770,9 +931,15 @@ export function AttendancePage() {
                         <TableCell className="py-4 px-6">
                           <div className="flex items-center gap-4">
                             <div className="relative">
-                              <div className="w-12 h-12 bg-linear-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-sm">
-                                {record.employeeName.split(' ').map(n => n[0]).join('').toUpperCase()}
-                              </div>
+                              {(() => {
+                                return (
+                                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-sm ${
+                                    record.teamId ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'
+                                  }`}>
+                                    {record.employeeName.split(' ').map(n => n[0]).join('').toUpperCase()}
+                                  </div>
+                                )
+                              })()}
                               {record.hasAttendance && getStatusIcon(record.status) && (
                                 <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5">
                                   {getStatusIcon(record.status)}
@@ -790,6 +957,25 @@ export function AttendancePage() {
                               <p className="text-xs text-gray-400">{record.email}</p>
                             </div>
                           </div>
+                        </TableCell>
+                        <TableCell className="py-4 px-6">
+                          {(() => {
+                            const teamInfo = getTeamInfo(record.teamId, teams)
+                            return (
+                              <div className="space-y-1">
+                                <Badge className={`${teamInfo.color} font-medium`}>
+                                  {teamInfo.name}
+                                </Badge>
+                                {record.isTeamLeader && (
+                                  <div className="flex items-center gap-1">
+                                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs">
+                                      Team Leader
+                                    </Badge>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()}
                         </TableCell>
                         <TableCell className="py-4 px-6">
                           {record.hasAttendance ? (
@@ -965,7 +1151,6 @@ export function AttendancePage() {
                                 <UserPlus className="h-4 w-4 mr-2" />
                                 Assign Task
                               </DropdownMenuItem>
-                              <DropdownMenuItem>Send Message</DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>

@@ -11,6 +11,11 @@ import {
   deleteAttendanceRecord,
 } from "@/modules/staffs/attendance/attendance.controller";
 
+import {
+  exportAttendanceToExcel,
+  exportAttendanceToPDF,
+} from "@/modules/staffs/attendance/attendance.export";
+
 const router = Router();
 
 /**
@@ -60,5 +65,19 @@ router.get("/attempts/:employeeId", checkRemainingAttempts);
 // Get assigned location for employee (today)
 // GET /attendance/assigned-location/:employeeId
 router.get("/assigned-location/:employeeId", getAssignedLocation);
+
+/**
+ * =========================
+ * Export Functions
+ * =========================
+ */
+
+// Export attendance to Excel
+// GET /attendance/export/excel
+router.get("/export/excel", exportAttendanceToExcel);
+
+// Export attendance to PDF
+// GET /attendance/export/pdf", exportAttendanceToPDF);
+router.get("/export/pdf", exportAttendanceToPDF);
 
 export default router;

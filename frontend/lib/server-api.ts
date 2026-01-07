@@ -1001,3 +1001,62 @@ export async function getEmployeeTasks(employeeId: string, status?: string): Pro
     throw error
   }
 }
+
+// Export Functions
+export type ExportParams = {
+  dateFrom?: string
+  dateTo?: string
+  date?: string
+  employeeId?: string
+  status?: string
+}
+
+export async function exportAttendanceToExcel(params?: ExportParams): Promise<void> {
+  try {
+    const searchParams = new URLSearchParams()
+    
+    if (params?.dateFrom) searchParams.append('dateFrom', params.dateFrom)
+    if (params?.dateTo) searchParams.append('dateTo', params.dateTo)
+    if (params?.date) searchParams.append('date', params.date)
+    if (params?.employeeId) searchParams.append('employeeId', params.employeeId)
+    if (params?.status) searchParams.append('status', params.status)
+
+    const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/attendance/export/excel${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
+    
+    // Create a temporary link to trigger download
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `attendance-report-${new Date().toISOString().split('T')[0]}.xlsx`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  } catch (error) {
+    console.error('exportAttendanceToExcel error:', error)
+    throw error
+  }
+}
+
+export async function exportAttendanceToPDF(params?: ExportParams): Promise<void> {
+  try {
+    const searchParams = new URLSearchParams()
+    
+    if (params?.dateFrom) searchParams.append('dateFrom', params.dateFrom)
+    if (params?.dateTo) searchParams.append('dateTo', params.dateTo)
+    if (params?.date) searchParams.append('date', params.date)
+    if (params?.employeeId) searchParams.append('employeeId', params.employeeId)
+    if (params?.status) searchParams.append('status', params.status)
+
+    const url = `${process.env.NEXT_PUBLIC_BACKEND_URL}/attendance/export/pdf${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
+    
+    // Create a temporary link to trigger download
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `attendance-report-${new Date().toISOString().split('T')[0]}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  } catch (error) {
+    console.error('exportAttendanceToPDF error:', error)
+    throw error
+  }
+}

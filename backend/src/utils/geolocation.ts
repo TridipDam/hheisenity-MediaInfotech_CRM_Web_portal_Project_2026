@@ -1,5 +1,4 @@
-// lib/geolocation.ts
-import { LocationData, GeolocationCoordinates } from '@/modules/staffs/attendance/attendance.types'
+import { GeolocationCoordinates } from '@/modules/staffs/attendance/attendance.types'
 
 // Helper: Haversine distance (meters)
 export function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -24,65 +23,138 @@ export type ForwardGeocodeResult = {
   boundingbox?: [string, string, string, string] // lat_min, lat_max, lon_min, lon_max
   granularity: 'exact' | 'street' | 'neighbourhood' | 'city' | 'region' | 'country' | 'unknown'
   estimatedRadiusMeters?: number // derived from boundingbox if available
+  importance?: number
   raw?: any
 }
 
-// Reverse geocode to friendly address
-export async function getLocationFromCoordinates(
-  coordinates: GeolocationCoordinates
-): Promise<LocationData | null> {
-  try {
-    const { latitude, longitude } = coordinates
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(
-        String(latitude)
-      )}&lon=${encodeURIComponent(String(longitude))}&addressdetails=1`,
-      {
-        headers: {
-          'User-Agent': 'AttendanceApp/1.0 (+https://your-org.example)'
-        },
-        // Nominatim rate-limits aggressively — ensure you cache results in production
-      }
-    )
+// Map Mapbox place_type to granularity
+function detectMapboxGranularity(place_type: string[]): ForwardGeocodeResult['granularity'] {
+  if (!place_type || place_type.length === 0) return 'unknown'
+  const type = place_type[0]
+  switch (type) {
+    case 'address':
+    case 'poi':
+      return 'exact'
+    case 'street':
+      return 'street'
+    case 'neighborhood':
+      return 'neighbourhood'
+    case 'place':
+      return 'city'
+    case 'region':
+      return 'region'
+    case 'country':
+      return 'country'
+    default:
+      return 'unknown'
+  }
+}
 
+// Helper: determine granularity from nominatim result.type/class
+function detectGranularity(t?: string, c?: string): ForwardGeocodeResult['granularity'] {
+  let gran: ForwardGeocodeResult['granularity'] = 'unknown'
+  const exactTypes = new Set(['house', 'building', 'residential', 'yes', 'commercial', 'apartments'])
+  const streetTypes = new Set(['street', 'road', 'pedestrian'])
+  const neighbourhoodTypes = new Set(['neighbourhood', 'suburb', 'quarter'])
+  const cityTypes = new Set(['city', 'town', 'village', 'municipality'])
+  const regionTypes = new Set(['state', 'region', 'province', 'county'])
+  const countryTypes = new Set(['country'])
+
+  if (t && exactTypes.has(t)) gran = 'exact'
+  else if (t && streetTypes.has(t)) gran = 'street'
+  else if (t && neighbourhoodTypes.has(t)) gran = 'neighbourhood'
+  else if (t && cityTypes.has(t)) gran = 'city'
+  else if (t && regionTypes.has(t)) gran = 'region'
+  else if (t && countryTypes.has(t)) gran = 'country'
+  else if (c && c === 'place' && t === 'house') gran = 'exact'
+
+  return gran
+}
+
+// Forward geocoding with Mapbox API
+export async function getCoordinatesFromMapbox(locationText: string): Promise<ForwardGeocodeResult | null> {
+  try {
+    if (!locationText || locationText.trim() === '') return null
+
+    const MAPBOX_API_KEY = process.env.MAPBOX_API_KEY || 'YOUR_MAPBOX_API_KEY'
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
+      locationText
+    )}.json?access_token=${MAPBOX_API_KEY}&limit=5&autocomplete=false`
+
+    const res = await fetch(url)
     if (!res.ok) {
-      console.error({ event: 'geocode_reverse_error', status: res.status, statusText: res.statusText })
+      console.error({ event: 'mapbox_geocode_error', status: res.status, statusText: res.statusText })
       throw new Error('LOCATION_SERVICE_ERROR')
     }
 
     const data = await res.json()
-    if (!data || !data.address) return null
-    const address = data.address
+    if (!data.features || data.features.length === 0) return null
 
-    return {
-      address: data.display_name || '',
-      city: address.city || address.town || address.village || address.municipality || '',
-      state: address.state || address.region || address.province || ''
+    // Map Mapbox feature to ForwardGeocodeResult
+    const enriched: ForwardGeocodeResult[] = data.features.map((feature: any): ForwardGeocodeResult => {
+      const [longitude, latitude] = feature.center
+      const granularity = detectMapboxGranularity(feature.place_type)
+      const boundingbox = feature.bbox || undefined
+      let estimatedRadiusMeters: number | undefined
+      
+      if (boundingbox && boundingbox.length === 4) {
+        const [lonMin, latMin, lonMax, latMax] = boundingbox
+        estimatedRadiusMeters = Math.round(
+          calculateDistanceMeters(latMin, lonMin, latMax, lonMax) / 2
+        )
+      }
+      
+      return {
+        latitude,
+        longitude,
+        displayName: feature.place_name,
+        osmType: undefined,
+        osmClass: undefined,
+        type: feature.text,
+        boundingbox,
+        granularity,
+        estimatedRadiusMeters,
+        importance: feature.relevance,
+        raw: feature
+      }
+    })
+
+    const rankMap: Record<ForwardGeocodeResult['granularity'], number> = {
+      exact: 6,
+      street: 5,
+      neighbourhood: 4,
+      city: 3,
+      region: 2,
+      country: 1,
+      unknown: 0
     }
+
+    enriched.sort((a, b) => {
+      const ra = rankMap[a.granularity as keyof typeof rankMap] ?? 0
+      const rb = rankMap[b.granularity as keyof typeof rankMap] ?? 0
+      if (ra !== rb) return rb - ra
+      const ea = a.estimatedRadiusMeters ?? Number.POSITIVE_INFINITY
+      const eb = b.estimatedRadiusMeters ?? Number.POSITIVE_INFINITY
+      if (ea !== eb) return ea - eb
+      return (b.importance ?? 0) - (a.importance ?? 0)
+    })
+
+    return enriched[0] || null
   } catch (err) {
-    console.error({ event: 'geolocation_reverse_failure', error: err instanceof Error ? err.message : err })
+    console.error({ event: 'mapbox_geocode_failure', error: err instanceof Error ? err.message : err })
     return null
   }
 }
 
-export async function getHumanReadableLocation(coordinates: GeolocationCoordinates): Promise<string> {
-  try {
-    const location = await getLocationFromCoordinates(coordinates)
-    if (!location) return `Coordinates: ${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`
-    const parts = [location.address, location.city, location.state].filter(Boolean)
-    return parts.join(', ')
-  } catch (err) {
-    console.error({ event: 'human_readable_failure', error: err instanceof Error ? err.message : err })
-    return `Coordinates: ${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`
-  }
-}
-
-// Forward geocoding with granularity detection.
-// Returns coordinates + granularity + estimated bounding radius (meters) when possible.
+// Forward geocoding with Nominatim (OpenStreetMap)
 export async function getCoordinatesFromLocation(locationText: string): Promise<ForwardGeocodeResult | null> {
   try {
+    if (!locationText || locationText.trim() === '') return null
+
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationText)}&limit=1&addressdetails=1`,
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        locationText
+      )}&limit=5&addressdetails=1`,
       {
         headers: {
           'User-Agent': 'AttendanceApp/1.0 (+https://your-org.example)'
@@ -97,62 +169,81 @@ export async function getCoordinatesFromLocation(locationText: string): Promise<
 
     const arr = await res.json()
     if (!arr || arr.length === 0) return null
-    const result = arr[0]
 
-    // Determine granularity by result.type and class
-    const t: string | undefined = result.type
-    const c: string | undefined = result.class
+    // Build enriched results with granularity and estimated radius
+    const enriched: ForwardGeocodeResult[] = arr.map((result: any) => {
+      const t: string | undefined = result.type
+      const c: string | undefined = result.class
+      const granularity = detectGranularity(t, c)
 
-    let granularity: ForwardGeocodeResult['granularity'] = 'unknown'
-    const exactTypes = new Set(['house', 'building', 'residential', 'yes', 'commercial', 'apartments'])
-    const streetTypes = new Set(['street', 'road', 'pedestrian'])
-    const neighbourhoodTypes = new Set(['neighbourhood', 'suburb', 'quarter'])
-    const cityTypes = new Set(['city', 'town', 'village', 'municipality'])
-    const regionTypes = new Set(['state', 'region', 'province', 'county'])
-    const countryTypes = new Set(['country'])
+      let estimatedRadiusMeters: number | undefined
+      if (result.boundingbox && result.boundingbox.length === 4) {
+        const [latMinStr, latMaxStr, lonMinStr, lonMaxStr] = result.boundingbox
+        const latMin = parseFloat(latMinStr)
+        const latMax = parseFloat(latMaxStr)
+        const lonMin = parseFloat(lonMinStr)
+        const lonMax = parseFloat(lonMaxStr)
+        estimatedRadiusMeters = Math.round(calculateDistanceMeters(latMin, lonMin, latMax, lonMax) / 2)
+      }
 
-    if (t && exactTypes.has(t)) granularity = 'exact'
-    else if (t && streetTypes.has(t)) granularity = 'street'
-    else if (t && neighbourhoodTypes.has(t)) granularity = 'neighbourhood'
-    else if (t && cityTypes.has(t)) granularity = 'city'
-    else if (t && regionTypes.has(t)) granularity = 'region'
-    else if (t && countryTypes.has(t)) granularity = 'country'
-    else if (c && c === 'place' && t === 'house') granularity = 'exact'
+      const importance = result.importance ? parseFloat(result.importance) : 0
 
-    // Estimate bounding radius using boundingbox if available
-    let estimatedRadiusMeters: number | undefined
-    if (result.boundingbox && result.boundingbox.length === 4) {
-      // boundingbox is [lat_min, lat_max, lon_min, lon_max] sometimes returned as strings
-      const [latMinStr, latMaxStr, lonMinStr, lonMaxStr] = result.boundingbox
-      const latMin = parseFloat(latMinStr)
-      const latMax = parseFloat(latMaxStr)
-      const lonMin = parseFloat(lonMinStr)
-      const lonMax = parseFloat(lonMaxStr)
-      // use half-diagonal as an approximate radius
-      estimatedRadiusMeters = Math.round(
-        calculateDistanceMeters(latMin, lonMin, latMax, lonMax) / 2
-      )
+      return {
+        latitude: parseFloat(result.lat),
+        longitude: parseFloat(result.lon),
+        displayName: result.display_name,
+        osmType: result.osm_type,
+        osmClass: result.class,
+        type: result.type,
+        boundingbox: result.boundingbox as any,
+        granularity,
+        estimatedRadiusMeters,
+        importance,
+        raw: result
+      }
+    })
+
+    // Ranking preference: prefer higher granularity
+    const rankMap: Record<ForwardGeocodeResult['granularity'], number> = {
+      exact: 6,
+      street: 5,
+      neighbourhood: 4,
+      city: 3,
+      region: 2,
+      country: 1,
+      unknown: 0
     }
 
-    return {
-      latitude: parseFloat(result.lat),
-      longitude: parseFloat(result.lon),
-      displayName: result.display_name,
-      osmType: result.osm_type,
-      osmClass: result.class,
-      type: result.type,
-      boundingbox: result.boundingbox as any,
-      granularity,
-      estimatedRadiusMeters,
-      raw: result
-    }
+    enriched.sort((a, b) => {
+      const ra = rankMap[a.granularity as keyof typeof rankMap] ?? 0
+      const rb = rankMap[b.granularity as keyof typeof rankMap] ?? 0
+      if (ra !== rb) return rb - ra
+      const ea = a.estimatedRadiusMeters ?? Number.POSITIVE_INFINITY
+      const eb = b.estimatedRadiusMeters ?? Number.POSITIVE_INFINITY
+      if (ea !== eb) return ea - eb
+      return (b.importance ?? 0) - (a.importance ?? 0)
+    })
+
+    return enriched[0] || null
   } catch (err) {
     console.error({ event: 'geocode_forward_failure', error: err instanceof Error ? err.message : err })
     return null
   }
 }
 
-// convenience format
+// Reverse geocode to human-readable address
+export async function getHumanReadableLocation(coordinates: GeolocationCoordinates): Promise<string> {
+  try {
+    const location = await getCoordinatesFromLocation(`${coordinates.latitude},${coordinates.longitude}`)
+    if (!location) return `Coordinates: ${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`
+    return location.displayName || `Coordinates: ${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`
+  } catch (err) {
+    console.error({ event: 'human_readable_failure', error: err instanceof Error ? err.message : err })
+    return `Coordinates: ${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`
+  }
+}
+
+// Convenience format
 export function formatCoordinates(coordinates: GeolocationCoordinates): string {
   return `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`
 }

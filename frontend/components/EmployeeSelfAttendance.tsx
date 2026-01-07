@@ -5,10 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useSession } from "next-auth/react"
-import { 
-  Camera, 
-  MapPin, 
-  CheckCircle, 
+import {
+  Camera,
+  MapPin,
+  CheckCircle,
   XCircle,
   Wifi,
   Monitor,
@@ -19,11 +19,11 @@ import {
   MapPinIcon
 } from "lucide-react"
 import { useEffect, useRef, useState, useCallback } from "react"
-import { 
-  DeviceInfo, 
-  LocationInfo, 
-  createAttendance, 
-  getRemainingAttempts, 
+import {
+  DeviceInfo,
+  LocationInfo,
+  createAttendance,
+  getRemainingAttempts,
   getAssignedLocation,
   getLocationInfo,
   getAttendanceRecords,
@@ -104,7 +104,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
           reject(new Error('Geolocation not supported'))
           return
         }
-        
+
         navigator.geolocation.getCurrentPosition(resolve, reject, {
           enableHighAccuracy: true,
           timeout: 10000,
@@ -113,7 +113,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
       })
 
       const { latitude, longitude } = position.coords
-      
+
       // Call backend API to get location info
       const locationData = await getLocationInfo(latitude, longitude)
       setUserLocationInfo(locationData)
@@ -128,7 +128,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
   // Check current attendance status
   const checkCurrentAttendanceStatus = useCallback(async (empId: string) => {
     if (!empId.trim()) return
-    
+
     try {
       const today = new Date().toISOString().split('T')[0]
       const response = await getAttendanceRecords({
@@ -136,7 +136,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
         date: today,
         limit: 1
       })
-      
+
       if (response.success && response.data?.records && response.data.records.length > 0) {
         const record = response.data.records[0]
         // Only consider it checked in/out if the employee did it themselves (source: 'SELF')
@@ -144,7 +144,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
         const selfCheckedIn = record.source === 'SELF' && !!record.clockIn
         const selfCheckedOut = record.source === 'SELF' && !!record.clockOut
         const hasAdminRecord = record.source === 'ADMIN' // Track admin-created records
-        
+
         // Check if there are new tasks assigned after the last check-out
         let canCheckInForNewTask = false
         if (selfCheckedOut && currentTasks.length > 0) {
@@ -156,7 +156,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
           })
           canCheckInForNewTask = hasNewTasks
         }
-        
+
         setCurrentAttendanceStatus({
           hasCheckedIn: selfCheckedIn && !canCheckInForNewTask, // Allow check-in if there's a new task
           hasCheckedOut: selfCheckedOut && !canCheckInForNewTask, // Reset check-out status for new task
@@ -183,7 +183,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
   // Check remaining attempts when employee ID changes
   const checkAttempts = async (empId: string) => {
     if (!empId.trim()) return
-    
+
     try {
       const response = await getRemainingAttempts(empId)
       if (response.success) {
@@ -198,7 +198,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
   // Get assigned location when employee ID changes
   const checkAssignedLocation = async (empId: string) => {
     if (!empId.trim()) return
-    
+
     try {
       const response = await getAssignedLocation(empId)
       if (response.success && response.data) {
@@ -215,7 +215,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
   // Get current tasks for employee
   const checkCurrentTasks = async (empId: string) => {
     if (!empId.trim()) return
-    
+
     try {
       const response = await getEmployeeTasks(empId, 'PENDING')
       if (response.success && response.data) {
@@ -290,21 +290,21 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
     try {
       setCameraLoading(true)
       setCameraActive(false)
-      
+
       // Check if getUserMedia is supported
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera access is not supported in this browser')
       }
-      
+
       console.log('Requesting camera access...')
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
           facingMode: 'user',
           width: { ideal: 640 },
           height: { ideal: 480 }
-        } 
+        }
       })
-      
+
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -315,13 +315,13 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
           }
         })
       }
-      
+
       setCameraActive(true)
       console.log('Camera started successfully')
     } catch (error) {
       console.error('Error accessing camera:', error)
       setCameraActive(false)
-      
+
       // Show user-friendly error message
       let errorMessage = 'Failed to access camera. '
       if (error instanceof Error) {
@@ -335,7 +335,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
           errorMessage += error.message
         }
       }
-      
+
       alert(errorMessage)
     } finally {
       setCameraLoading(false)
@@ -398,7 +398,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
     }
 
     setIsLoading(true)
-    
+
     try {
       // Capture photo from video stream
       let photoData: string | undefined
@@ -415,7 +415,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
 
       // Use current location info if available
       const locationData = userLocationInfo || locationInfo
-      
+
       // Call the backend API
       const response = await createAttendance({
         employeeId: employeeId.trim(),
@@ -474,7 +474,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
       console.error('Error marking attendance:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       alert(`Failed to mark attendance: ${errorMessage}`)
-      
+
       // Refresh attempts after error
       if (employeeId.trim()) {
         checkAttempts(employeeId.trim())
@@ -504,10 +504,10 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
 
   const canMarkAttendance = () => {
     return (
-      cameraActive && 
-      employeeId.trim() && 
-      !isLoading && 
-      !isLocked && 
+      cameraActive &&
+      employeeId.trim() &&
+      !isLoading &&
+      !isLocked &&
       remainingAttempts > 0 &&
       (userLocationInfo || locationInfo)
     )
@@ -568,7 +568,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                     </p>
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Check-out Status:</span>
@@ -619,7 +619,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                       </p>
                     )}
                   </div>
-                  
+
                   {assignedLocation && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
@@ -669,7 +669,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                     </div>
                   </div>
                 )}
-                
+
                 {/* Camera overlay */}
                 {cameraActive && (
                   <div className="absolute inset-4">
@@ -685,7 +685,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
 
               <div className="space-y-3">
                 {!cameraActive ? (
-                  <Button 
+                  <Button
                     onClick={startCamera}
                     className="w-full bg-blue-600 hover:bg-blue-700"
                     size="lg"
@@ -704,7 +704,7 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                     )}
                   </Button>
                 ) : (
-                  <Button 
+                  <Button
                     onClick={stopCamera}
                     variant="outline"
                     className="w-full"
@@ -713,9 +713,9 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                     Stop Camera
                   </Button>
                 )}
-                
+
                 {/* Debug button */}
-                <Button 
+                <Button
                   onClick={() => {
                     console.log('Camera debug info:')
                     console.log('- cameraActive:', cameraActive)
@@ -780,11 +780,11 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              <Button 
-                                onClick={getUserLocation} 
+                              <Button
+                                onClick={getUserLocation}
                                 disabled={locationLoading}
-                                size="sm" 
-                                variant="outline" 
+                                size="sm"
+                                variant="outline"
                                 className="text-xs"
                               >
                                 {locationLoading ? 'Getting location...' : 'Get My Location'}
@@ -814,15 +814,15 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                       <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                         <p className="text-sm text-yellow-800">
                           {isLocked ? "🔒 Attendance locked due to failed location attempts" :
-                           remainingAttempts === 0 ? "❌ No attempts remaining" :
-                           !employeeId.trim() ? "👤 Please enter your Employee ID" :
-                           !cameraActive ? "📷 Please start the camera" :
-                           !userLocationInfo && !locationInfo ? "📍 Please get your current location" :
-                           "⚠️ Complete all requirements above"}
+                            remainingAttempts === 0 ? "❌ No attempts remaining" :
+                              !employeeId.trim() ? "👤 Please enter your Employee ID" :
+                                !cameraActive ? "📷 Please start the camera" :
+                                  !userLocationInfo && !locationInfo ? "📍 Please get your current location" :
+                                    "⚠️ Complete all requirements above"}
                         </p>
                       </div>
                     )}
-                    
+
                     <div className="grid grid-cols-2 gap-3">
                       <Button
                         onClick={() => markAttendance('check-in')}
@@ -856,8 +856,8 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                         ) : (
                           <>
                             <XCircle className="h-4 w-4 mr-2" />
-                            {currentAttendanceStatus?.hasCheckedOut ? "Already Checked Out" : 
-                             !currentAttendanceStatus?.hasCheckedIn ? "Check In First" : "Check Out"}
+                            {currentAttendanceStatus?.hasCheckedOut ? "Already Checked Out" :
+                              !currentAttendanceStatus?.hasCheckedIn ? "Check In First" : "Check Out"}
                           </>
                         )}
                       </Button>
@@ -865,18 +865,33 @@ export function EmployeeSelfAttendance({ onAttendanceMarked, deviceInfo, locatio
                   </div>
                 </>
               ) : (
-                <div className="text-center space-y-4 py-8">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                    <CheckCircle className="h-8 w-8 text-green-600" />
+                attendanceMarked || currentAttendanceStatus?.hasCheckedOut ? (
+                  <div className="text-center space-y-4 py-8">
+                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto ${currentAttendanceStatus?.hasCheckedOut ? 'bg-red-100' : 'bg-green-100'
+                        }`}>
+                      {currentAttendanceStatus?.hasCheckedOut ? (
+                        <XCircle className="h-8 w-8 text-red-600" />
+                      ) : (
+                        <CheckCircle className="h-8 w-8 text-green-600" />
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className={`text-xl font-bold ${currentAttendanceStatus?.hasCheckedOut ? 'text-red-900' : 'text-green-900'
+                        }`}>
+                        {currentAttendanceStatus?.hasCheckedOut ? 'Checkout Recorded!' : 'Attendance Marked!'}
+                      </h3>
+                      <p className="text-gray-600">
+                        {currentAttendanceStatus?.hasCheckedOut
+                          ? 'Your checkout has been successfully recorded.'
+                          : 'Your attendance has been successfully recorded.'}
+                      </p>
+                      <Badge className={`${currentAttendanceStatus?.hasCheckedOut ? 'bg-red-100 text-red-800 border-red-200' : 'bg-green-100 text-green-800 border-green-200'
+                        }`}>
+                        Employee ID: {employeeId}
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <h3 className="text-xl font-bold text-green-900">Attendance Marked!</h3>
-                    <p className="text-gray-600">Your attendance has been successfully recorded.</p>
-                    <Badge className="bg-green-100 text-green-800 border-green-200">
-                      Employee ID: {employeeId}
-                    </Badge>
-                  </div>
-                </div>
+                ) : null
               )}
             </CardContent>
           </Card>

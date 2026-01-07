@@ -2,21 +2,12 @@
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { signOut, signIn } from "next-auth/react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { 
   Package, 
   Headphones, 
@@ -25,8 +16,6 @@ import {
   MapPin,
   ShieldCheck,
   User,
-  Settings,
-  LogOut,
   Eye,
   EyeOff,
 } from "lucide-react"
@@ -95,7 +84,7 @@ function UserLoginCard() {
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="user-employee-id" className="text-sm font-medium">Employee ID</Label>
+            <Label htmlFor="user-employee-id" className="text-sm font-medium">User ID</Label>
             <Input
               id="user-employee-id"
               name="employeeId"
@@ -542,12 +531,6 @@ export default function LandingPage({ onGetStarted, isLoggedIn = false, userProf
               <h2 className="text-4xl font-black text-gray-900 mb-4">
                 {isLoggedIn ? "Welcome Back!" : "Choose Your Access Level"}
               </h2>
-              <p className="text-xl text-gray-600">
-                {isLoggedIn 
-                  ? "You are successfully logged in. Use the navigation above to access your dashboard."
-                  : "Secure login for different user roles with tailored dashboards and permissions"
-                }
-              </p>
             </div>
             
             {!isLoggedIn && (

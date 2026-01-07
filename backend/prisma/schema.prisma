@@ -88,7 +88,7 @@ model Attendance {
   clockIn      DateTime?
   clockOut     DateTime?
   status       AttendanceStatus @default(PRESENT)
-  location     String?
+  location     String?          @db.Text
   ipAddress    String?
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt

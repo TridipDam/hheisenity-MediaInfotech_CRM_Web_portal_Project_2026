@@ -1,4 +1,3 @@
-// attendance.service.ts
 import { prisma } from '@/lib/prisma'
 import {
   AttendanceRecord,
@@ -6,7 +5,6 @@ import {
 } from './attendance.types'
 import {
   getHumanReadableLocation,
-  getLocationFromCoordinates,
   getCoordinatesFromLocation,
   calculateDistanceMeters
 } from '@/utils/geolocation'
@@ -53,6 +51,8 @@ function hasValidCoordinates(coords?: GeolocationCoordinates | null) {
   // treat 0,0 as invalid placeholder
   return !(lat === 0 && lon === 0)
 }
+
+/* ... (validateLocationByGPS and validateLocationByArea unchanged) ... */
 
 // Validate by GPS coordinates (Haversine)
 async function validateLocationByGPS(
@@ -123,13 +123,18 @@ async function validateLocationByArea(
   assignedLocationText: string
 ): Promise<ValidationResult> {
   try {
-    const userLocation = await getLocationFromCoordinates(userCoordinates)
+    // Use reverse geocoding by calling getCoordinatesFromLocation with coordinate string
+    const coordinatesString = `${userCoordinates.latitude},${userCoordinates.longitude}`
+    const userLocation = await getCoordinatesFromLocation(coordinatesString)
+    
     if (!userLocation) {
       return { isMatch: false, confidence: 'none', details: 'Could not reverse geocode user coordinates', code: 'LOCATION_SERVICE_ERROR' }
     }
 
-    const userAddress = (userLocation.address || '').toLowerCase()
-    const userCity = (userLocation.city || '').toLowerCase()
+    // Extract address and city from the displayName or use empty strings
+    const displayName = userLocation.displayName || ''
+    const userAddress = displayName.toLowerCase()
+    const userCity = displayName.toLowerCase() // For now, use displayName for both
     const assignedNormalized = assignedLocationText.toLowerCase().trim()
 
     // Split assignedName into meaningful keywords
@@ -239,8 +244,6 @@ export async function validateEmployeeLocation(
     }
   }
 
-  // Reverse geocode for user readability (removed unused variable)
-
   // If assigned coordinates exist, prefer them (authoritative)
   if (assignedHasCoords) {
     const assignedCoords: GeolocationCoordinates = { latitude: assignedLat, longitude: assignedLon }
@@ -279,68 +282,14 @@ export async function validateEmployeeLocation(
     }
   }
 
-  // Assigned has no coordinates -> attempt forward geocoding once
+  // Assigned has no coordinates -> DO NOT perform forward geocoding at attendance-time.
+  // Reject validation and instruct admin to set precise coordinates.
   if (assignedAreaText) {
-    const geocode = await getCoordinatesFromLocation(assignedAreaText)
-    console.info({ event: 'forward_geocode', assignedAreaText, geocode })
-
-    if (geocode && geocode.latitude && geocode.longitude) {
-      // If granularity is too coarse (city/region) treat as insufficient unless admin explicitly allowed large radius
-      const adminRadius = Number(dailyLocation.radius ?? 0)
-      const radiusToUse = adminRadius > 0 ? adminRadius : DEFAULT_ATTENDANCE_RADIUS_METERS
-
-      if (geocode.granularity === 'city' || geocode.granularity === 'region' || geocode.granularity === 'country') {
-        // only accept city/region-level if admin explicitly set a higher radius
-        if (!adminRadius || adminRadius <= DEFAULT_ATTENDANCE_RADIUS_METERS) {
-          // fallback to area-based token matching (coarse) — do not accept as exact GPS
-          const areaResult = await validateLocationByArea(coordinates, assignedAreaText)
-          return {
-            isValid: areaResult.isMatch,
-            details: areaResult.details,
-            code: areaResult.code,
-            confidence: areaResult.confidence,
-            allowedLocation: dailyLocation
-          }
-        }
-        // else admin allowed large radius - continue with GPS-style check using admin radius
-      }
-
-      // Use the forward-geocoded coords for GPS check
-      const assignedCoords: GeolocationCoordinates = { latitude: geocode.latitude, longitude: geocode.longitude }
-      const gpsResult = await validateLocationByGPS(coordinates, assignedCoords, radiusToUse)
-      // attach assignedCoords and geocode metadata
-      if (gpsResult.isMatch) {
-        return {
-          isValid: true,
-          details: gpsResult.details,
-          distance: gpsResult.distance,
-          radiusUsed: gpsResult.radiusUsed,
-          assignedCoords,
-          confidence: gpsResult.confidence,
-          allowedLocation: dailyLocation
-        }
-      } else {
-        return {
-          isValid: false,
-          details: gpsResult.details,
-          code: gpsResult.code || 'LOCATION_MISMATCH',
-          distance: gpsResult.distance,
-          radiusUsed: gpsResult.radiusUsed,
-          assignedCoords,
-          confidence: gpsResult.confidence,
-          allowedLocation: dailyLocation
-        }
-      }
-    } else {
-      // Could not geocode assigned area — fallback to area matching
-      const areaResult = await validateLocationByArea(coordinates, assignedAreaText)
-      return {
-        isValid: areaResult.isMatch,
-        details: areaResult.details,
-        code: areaResult.code,
-        confidence: areaResult.confidence,
-        allowedLocation: dailyLocation
-      }
+    return {
+      isValid: false,
+      details: 'Assigned location does not have authoritative coordinates. Please ask your administrator to set latitude and longitude for the assigned location so attendance validation can use precise coordinates.',
+      code: 'ASSIGNED_COORDS_MISSING',
+      allowedLocation: dailyLocation
     }
   }
 

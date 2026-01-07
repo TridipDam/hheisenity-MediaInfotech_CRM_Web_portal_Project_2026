@@ -348,7 +348,7 @@ export function AssignTaskPage({ onBack, preSelectedEmployeeId, onTaskAssigned }
                 {assignmentType === 'individual' && selectedEmployeeData && (
                   <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                      <div className="w-10 h-10 bg-linear-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white font-semibold text-sm">
                         {selectedEmployeeData.name.split(' ').map(n => n[0]).join('').toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -399,7 +399,7 @@ export function AssignTaskPage({ onBack, preSelectedEmployeeId, onTaskAssigned }
 
                   {/* Task Description */}
                   <div className="space-y-2">
-                    <Label htmlFor="task-description">Description *</Label>
+                    <Label htmlFor="task-description">Description</Label>
                     <Textarea
                       id="task-description"
                       placeholder="Describe the task in detail..."
@@ -410,30 +410,11 @@ export function AssignTaskPage({ onBack, preSelectedEmployeeId, onTaskAssigned }
                     />
                   </div>
 
-                  {/* Category */}
-                  <div className="space-y-2">
-                    <Label htmlFor="category">Category</Label>
-                    <Select value={taskData.category} onValueChange={(value) => handleInputChange('category', value)}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="development">Development</SelectItem>
-                        <SelectItem value="design">Design</SelectItem>
-                        <SelectItem value="testing">Testing</SelectItem>
-                        <SelectItem value="documentation">Documentation</SelectItem>
-                        <SelectItem value="meeting">Meeting</SelectItem>
-                        <SelectItem value="review">Review</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
                   {/* Location */}
                   <div className="space-y-2">
                     <Label htmlFor="location" className="flex items-center gap-2">
                       <MapPin className="h-4 w-4 text-gray-500" />
-                      Location
+                      Location *
                     </Label>
                     <Input
                       id="location"
@@ -448,7 +429,7 @@ export function AssignTaskPage({ onBack, preSelectedEmployeeId, onTaskAssigned }
                   <div className="space-y-2">
                     <Label htmlFor="start-time" className="flex items-center gap-2">
                       <Clock className="h-4 w-4 text-gray-500" />
-                      Start Time
+                      Start Time *
                     </Label>
                     <Input
                       id="start-time"
@@ -463,7 +444,7 @@ export function AssignTaskPage({ onBack, preSelectedEmployeeId, onTaskAssigned }
                   <div className="space-y-2">
                     <Label htmlFor="end-time" className="flex items-center gap-2">
                       <Clock className="h-4 w-4 text-gray-500" />
-                      End Time
+                      End Time (Optional)
                     </Label>
                     <Input
                       id="end-time"
@@ -497,7 +478,8 @@ export function AssignTaskPage({ onBack, preSelectedEmployeeId, onTaskAssigned }
                         disabled={
                           submitting || 
                           !taskData.title || 
-                          !taskData.description || 
+                          !taskData.location || 
+                          !taskData.startTime ||
                           (assignmentType === 'team' && !selectedTeam) ||
                           (assignmentType === 'individual' && !selectedEmployee)
                         }

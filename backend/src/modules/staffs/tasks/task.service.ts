@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getCoordinatesFromLocation } from "@/utils/geolocation";
 
 export type TaskStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 
@@ -49,10 +50,10 @@ export async function createTask(data: CreateTaskData): Promise<TaskRecord> {
       // Parse start and end times
       const [startHour, startMinute] = data.startTime.split(':').map(Number);
       const [endHour, endMinute] = data.endTime.split(':').map(Number);
-      
+
       const startDateTime = new Date(today);
       startDateTime.setHours(startHour, startMinute, 0, 0);
-      
+
       const endDateTime = new Date(today);
       endDateTime.setHours(endHour, endMinute, 0, 0);
 
@@ -63,6 +64,13 @@ export async function createTask(data: CreateTaskData): Promise<TaskRecord> {
         console.log(`Adjusted end time for employee ${data.employeeId}: ${startDateTime.toLocaleTimeString()} - ${endDateTime.toLocaleTimeString()}`);
       }
 
+      const geo = await getCoordinatesFromLocation(data.location);
+
+      if (!geo) {
+        throw new Error('UNABLE_TO_GEOCODE_TASK_LOCATION');
+      }
+
+
       // Create or update daily location
       await prisma.dailyLocation.upsert({
         where: {
@@ -72,8 +80,8 @@ export async function createTask(data: CreateTaskData): Promise<TaskRecord> {
           }
         },
         update: {
-          latitude: 0, // Default coordinates - will be updated when admin sets specific location
-          longitude: 0,
+          latitude: geo.latitude,
+          longitude: geo.longitude,
           radius: 100,
           address: data.location,
           city: data.location,
@@ -86,8 +94,8 @@ export async function createTask(data: CreateTaskData): Promise<TaskRecord> {
         create: {
           employeeId: employee.id,
           date: today,
-          latitude: 0, // Default coordinates - will be updated when admin sets specific location
-          longitude: 0,
+          latitude: geo.latitude,
+          longitude: geo.longitude,
           radius: 100,
           address: data.location,
           city: data.location,
@@ -128,24 +136,24 @@ export async function createTask(data: CreateTaskData): Promise<TaskRecord> {
 
     // Prepare attendance data with task information
     const currentTime = new Date();
-    
+
     // When a task is assigned, automatically mark employee as PRESENT
     // This indicates the employee is working and has been assigned a task
     let attendanceStatus: 'PRESENT' | 'LATE' = 'PRESENT';
-    
+
     // If task has start time, check if current time is significantly after start time
     if (data.startTime) {
       const [startHour, startMinute] = data.startTime.split(':').map(Number);
       const taskStartTime = new Date(today);
       taskStartTime.setHours(startHour, startMinute, 0, 0);
-      
+
       // If current time is more than 30 minutes after task start time, mark as late
       const lateThreshold = new Date(taskStartTime.getTime() + 30 * 60 * 1000); // 30 minutes grace period
       if (currentTime > lateThreshold) {
         attendanceStatus = 'LATE';
       }
     }
-    
+
     const attendanceData = {
       taskId: task.id,
       taskStartTime: data.startTime,
@@ -163,9 +171,9 @@ export async function createTask(data: CreateTaskData): Promise<TaskRecord> {
         ...attendanceData,
         ...(existingAttendance.clockIn ? {} : { clockIn: currentTime })
       };
-      
+
       console.log(`Updating attendance for employee ${data.employeeId} with status: ${attendanceStatus}`);
-      
+
       await prisma.attendance.update({
         where: { id: existingAttendance.id },
         data: updateData
@@ -173,7 +181,7 @@ export async function createTask(data: CreateTaskData): Promise<TaskRecord> {
     } else {
       // Create new attendance record with task assignment and timing
       console.log(`Creating new attendance record for employee ${data.employeeId} with status: ${attendanceStatus}`);
-      
+
       await prisma.attendance.create({
         data: {
           employeeId: employee.id,
@@ -284,7 +292,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus): Prom
 
     if (attendance && attendance.taskId === taskId) {
       let attendanceStatus: 'PRESENT' | 'ABSENT' | 'LATE' | 'MARKDOWN' = 'PRESENT';
-      
+
       // Determine attendance status based on task status
       switch (status) {
         case 'PENDING':
@@ -311,7 +319,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus): Prom
               }
             }
           });
-          
+
           attendanceStatus = otherTasks.length > 0 ? 'PRESENT' : 'ABSENT';
           break;
       }
@@ -350,7 +358,7 @@ export async function updateTaskStatus(taskId: string, status: TaskStatus): Prom
 // Get all tasks with pagination
 export async function getAllTasks(page: number = 1, limit: number = 50, status?: TaskStatus) {
   const skip = (page - 1) * limit;
-  
+
   try {
     const whereClause: any = {};
     if (status) {
@@ -505,7 +513,7 @@ export async function fixDailyLocationTimes(): Promise<void> {
       if (endTime <= startTime) {
         // Set end time to 8 hours after start time
         const newEndTime = new Date(startTime.getTime() + (8 * 60 * 60 * 1000));
-        
+
         await prisma.dailyLocation.update({
           where: { id: location.id },
           data: {
