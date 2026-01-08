@@ -12,8 +12,8 @@ export default withAuth(
 
       // Employee/Staff access restrictions
       if (userType === 'employee') {
-        // Allow employees to access staff-portal, employee-attendance, and vehicles pages
-        const allowedEmployeePaths = ['/staff-portal', '/employee-attendance', '/vehicles']
+        // Allow employees to access staff-portal and employee-attendance pages
+        const allowedEmployeePaths = ['/staff-portal', '/employee-attendance']
         const isAllowedPath = allowedEmployeePaths.some(path => pathname.startsWith(path))
         
         if (!isAllowedPath) {

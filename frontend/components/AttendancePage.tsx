@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AddAttendanceRecord } from "@/components/AddAttendanceRecord"
 import { AssignTaskPage } from "@/components/AssignTaskPage"
 import { DateRangePicker } from "@/components/DateRangePicker"
+import { VehiclesPage } from "@/components/VehiclesPage"
 import {
   ChevronLeft,
   ChevronRight,
@@ -30,7 +31,7 @@ import {
   UserPlus,
   Car
 } from "lucide-react"
-import { getAttendanceRecords, getAllEmployees, getAllTeams, AttendanceRecord, Employee, Team, deleteAttendanceRecord, exportAttendanceToExcel, exportAttendanceToPDF, ExportParams } from "@/lib/server-api"
+import { getAttendanceRecords, getAllEmployees, getAllTeams, getAllVehicles, AttendanceRecord, Employee, Team, Vehicle, deleteAttendanceRecord, exportAttendanceToExcel, exportAttendanceToPDF, ExportParams } from "@/lib/server-api"
 
 interface DateRange {
   from: Date | null
@@ -39,6 +40,22 @@ interface DateRange {
 
 interface ExtendedAttendanceRecord extends AttendanceRecord {
   hasAttendance: boolean
+}
+
+const getAssignedVehicle = (employeeId: string, employeeName: string, vehicles: Vehicle[]) => {
+  // Find vehicle assigned to this employee by matching the employee display ID
+  const assignedVehicle = vehicles.find(vehicle => 
+    vehicle.status === 'ASSIGNED' && vehicle.employeeId === employeeId
+  )
+  
+  if (assignedVehicle) {
+    return {
+      id: assignedVehicle.vehicleNumber,
+      model: `${assignedVehicle.make} ${assignedVehicle.model}${assignedVehicle.year ? ` (${assignedVehicle.year})` : ''}`
+    }
+  }
+  
+  return null
 }
 
 const getStatusIcon = (status: string) => {
@@ -149,6 +166,7 @@ const calculateWorkHours = (clockIn?: string, clockOut?: string) => {
 export function AttendancePage() {
   const [showAddForm, setShowAddForm] = React.useState(false)
   const [showAssignPage, setShowAssignPage] = React.useState(false)
+  const [showVehiclePage, setShowVehiclePage] = React.useState(false)
   const [currentDate, setCurrentDate] = React.useState(new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
@@ -157,6 +175,7 @@ export function AttendancePage() {
   }))
   const [combinedData, setCombinedData] = React.useState<ExtendedAttendanceRecord[]>([])
   const [teams, setTeams] = React.useState<Team[]>([])
+  const [vehicles, setVehicles] = React.useState<Vehicle[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [pagination, setPagination] = React.useState({
@@ -182,10 +201,11 @@ export function AttendancePage() {
       setLoading(true)
       setError(null)
 
-      // Fetch all employees and teams first
-      const [employeesResponse, teamsResponse] = await Promise.all([
+      // Fetch all employees, teams, and vehicles first
+      const [employeesResponse, teamsResponse, vehiclesResponse] = await Promise.all([
         getAllEmployees({ limit: 1000 }), // Get all employees
-        getAllTeams() // Get all teams
+        getAllTeams(), // Get all teams
+        getAllVehicles() // Get all vehicles
       ])
       
       let employees: Employee[] = []
@@ -197,6 +217,12 @@ export function AttendancePage() {
       if (teamsResponse.success && teamsResponse.data) {
         teamsData = teamsResponse.data
         setTeams(teamsData)
+      }
+
+      let vehiclesData: Vehicle[] = []
+      if (vehiclesResponse.success && vehiclesResponse.data) {
+        vehiclesData = vehiclesResponse.data
+        setVehicles(vehiclesData)
       }
 
       const params: Record<string, string | number> = {
@@ -509,6 +535,22 @@ export function AttendancePage() {
           preSelectedEmployeeId={selectedEmployee || undefined}
           onTaskAssigned={fetchAttendanceData}
         />
+      ) : showVehiclePage ? (
+        <div>
+          {/* Back button for Vehicle Page */}
+          <div className="p-6 pb-0">
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowVehiclePage(false)}
+              className="border-gray-300 hover:bg-gray-50 mb-4"
+            >
+              <ChevronLeft className="h-4 w-4 mr-2" />
+              Back to Attendance
+            </Button>
+          </div>
+          <VehiclesPage />
+        </div>
       ) : (
         <div className="p-6 space-y-6">
           {/* Header Section */}
@@ -531,7 +573,7 @@ export function AttendancePage() {
                 <Button
                   variant="outline"
                   className="border-purple-300 text-purple-600 hover:bg-purple-50"
-                  onClick={() => window.open('/vehicles', '_blank')}
+                  onClick={() => setShowVehiclePage(true)}
                 >
                   <Car className="h-4 w-4 mr-2" />
                   Vehicles
@@ -922,7 +964,7 @@ export function AttendancePage() {
                           </div>
                         </div>
                       </TableHead>
-                      <TableHead className="w-[120px] py-4 px-6 font-semibold text-gray-700">Hours</TableHead>
+                      <TableHead className="w-[180px] py-4 px-6 font-semibold text-gray-700">Assigned Vehicle</TableHead>
                       <TableHead className="w-[120px] py-4 px-6 font-semibold text-gray-700">Overtime</TableHead>
                       <TableHead className="w-[200px] py-4 px-6 font-semibold text-gray-700">Assigned Task</TableHead>
                       <TableHead className="w-[180px] py-4 px-6 font-semibold text-gray-700">Location</TableHead>
@@ -1032,11 +1074,39 @@ export function AttendancePage() {
 
                           return (
                             <>
-                              {/* Work Hours */}
+                              {/* Assigned Vehicle */}
                               <TableCell className="py-4 px-6">
-                                <span className="font-semibold text-gray-900">
-                                  {time.worked}
-                                </span>
+                                <div className="space-y-1">
+                                  {/* Show actual vehicle assigned by admin */}
+                                  {(() => {
+                                    const assignedVehicle = getAssignedVehicle(record.employeeId, record.employeeName, vehicles)
+                                    
+                                    if (assignedVehicle) {
+                                      return (
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-2">
+                                            <Car className="h-4 w-4 text-green-600" />
+                                            <span className="text-sm font-semibold text-gray-900">
+                                              {assignedVehicle.id}
+                                            </span>
+                                          </div>
+                                          <div className="text-xs text-gray-500">
+                                            {assignedVehicle.model}
+                                          </div>
+                                        </div>
+                                      )
+                                    } else {
+                                      return (
+                                        <div className="flex items-center gap-2">
+                                          <Car className="h-4 w-4 text-gray-400" />
+                                          <span className="text-sm text-gray-500">
+                                            Not assigned
+                                          </span>
+                                        </div>
+                                      )
+                                    }
+                                  })()}
+                                </div>
                               </TableCell>
 
                               {/* Overtime */}
@@ -1059,15 +1129,16 @@ export function AttendancePage() {
                                 {record.assignedTask.title}
                               </div>
                               <div className="flex items-center gap-2">
-                                <Badge
-                                  className={`text-xs ${record.assignedTask.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                    record.assignedTask.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                {record.assignedTask.status !== 'PENDING' && (
+                                  <Badge
+                                    className={`text-xs ${record.assignedTask.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                       record.assignedTask.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
                                         'bg-gray-50 text-gray-700 border-gray-200'
-                                    }`}
-                                >
-                                  {record.assignedTask.status.toLowerCase().replace('_', ' ')}
-                                </Badge>
+                                      }`}
+                                  >
+                                    {record.assignedTask.status.toLowerCase().replace('_', ' ')}
+                                  </Badge>
+                                )}
                                 {record.assignedTask.category && (
                                   <span className="text-xs text-gray-500">
                                     {record.assignedTask.category}
@@ -1291,12 +1362,18 @@ export function AttendancePage() {
                         <p className="text-sm text-gray-900">{selectedRecord.clockOut ? formatTime(selectedRecord.clockOut) : 'Working...'}</p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-gray-500">Work Hours</label>
-                        <p className="text-sm text-gray-900">{calculateWorkHours(selectedRecord.clockIn, selectedRecord.clockOut).worked}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-gray-500">Overtime</label>
-                        <p className="text-sm text-gray-900">{calculateWorkHours(selectedRecord.clockIn, selectedRecord.clockOut).overtime}</p>
+                        <label className="text-sm font-medium text-gray-500">Assigned Vehicle</label>
+                        <p className="text-sm text-gray-900">
+                          {(() => {
+                            const assignedVehicle = getAssignedVehicle(selectedRecord.employeeId, selectedRecord.employeeName, vehicles)
+                            
+                            if (assignedVehicle) {
+                              return `${assignedVehicle.id} - ${assignedVehicle.model}`
+                            } else {
+                              return 'Not assigned'
+                            }
+                          })()}
+                        </p>
                       </div>
                     </>
                   )}
@@ -1380,15 +1457,18 @@ export function AttendancePage() {
                         <div>
                           <label className="text-sm font-medium text-gray-500">Status</label>
                           <div className="mt-1">
-                            <Badge
-                              className={`text-xs ${selectedRecord.assignedTask.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                selectedRecord.assignedTask.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            {selectedRecord.assignedTask.status !== 'PENDING' ? (
+                              <Badge
+                                className={`text-xs ${selectedRecord.assignedTask.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                   selectedRecord.assignedTask.status === 'COMPLETED' ? 'bg-green-50 text-green-700 border-green-200' :
                                     'bg-gray-50 text-gray-700 border-gray-200'
-                                }`}
-                            >
-                              {selectedRecord.assignedTask.status.toLowerCase().replace('_', ' ')}
-                            </Badge>
+                                  }`}
+                              >
+                                {selectedRecord.assignedTask.status.toLowerCase().replace('_', ' ')}
+                              </Badge>
+                            ) : (
+                              <p className="text-sm text-gray-900">-</p>
+                            )}
                           </div>
                         </div>
                       </div>

@@ -270,11 +270,7 @@ export function EmployeeIdGenerator({ value, onChange, disabled }: EmployeeIdGen
 
   return (
     <div className="space-y-4">
-      <div className="space-y-3">
-        <Label htmlFor="employeeId" className="text-base font-medium text-gray-700">
-          Employee ID <span className="text-red-500">*</span>
-        </Label>
-        
+      <div className="space-y-3">        
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Input
@@ -337,13 +333,6 @@ export function EmployeeIdGenerator({ value, onChange, disabled }: EmployeeIdGen
           <Info className="h-3 w-3" />
           <span>Format: EMP001, EMP002, etc. Click the wand to auto-generate.</span>
         </div>
-
-        {/* Debug Info - Remove in production */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="text-xs text-gray-400 bg-gray-50 p-2 rounded">
-            Debug: API calls go to /api/v1/employee-id/generate
-          </div>
-        )}
       </div>
 
       {/* Preview Available IDs */}

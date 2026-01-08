@@ -1,13 +1,14 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Clock, Loader2, CheckCircle, AlertCircle, User, Info, ArrowLeft, Save, Plus } from "lucide-react"
+import { Clock, Loader2, CheckCircle, AlertCircle, User, Info, ArrowLeft, Save, Plus, Upload, Camera } from "lucide-react"
 import { createFieldEngineer } from "@/lib/server-api"
 import { EmployeeIdGenerator } from "@/components/EmployeeIdGenerator"
 
@@ -27,7 +28,8 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
     email: '',
     password: '',
     phone: '',
-    isTeamLeader: false
+    isTeamLeader: false,
+    photo: null as File | null
   })
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,6 +52,11 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
 
     if (!formData.password.trim()) {
       setError('Password is required')
+      return
+    }
+
+    if (!formData.phone.trim()) {
+      setError('Phone is required')
       return
     }
 
@@ -86,16 +93,36 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
           email: '',
           password: '',
           phone: '',
-          isTeamLeader: false
+          isTeamLeader: false,
+          photo: null
         })
         setShowSuccess(false)
         onBack?.()
       }, 2000)
     } catch (error) {
-      console.error('Error creating field engineer:', error)
       setError(error instanceof Error ? error.message : 'Failed to create field engineer')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handlePhotoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file')
+        return
+      }
+      
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('File size must be less than 5MB')
+        return
+      }
+      
+      setError(null) // Clear any previous errors
+      setFormData(prev => ({ ...prev, photo: file }))
     }
   }
 
@@ -164,6 +191,65 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {/* Photo Upload Section */}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-green-800">
+                        Employee Photo (Optional)
+                      </Label>
+                      <div className="border-2 border-dashed border-green-300 rounded-lg p-6 text-center hover:border-green-400 transition-colors">
+                        {formData.photo ? (
+                          <div className="space-y-3">
+                            <div className="w-20 h-20 mx-auto rounded-full overflow-hidden bg-gray-100 relative">
+                              <Image 
+                                src={URL.createObjectURL(formData.photo)} 
+                                alt="Employee preview" 
+                                fill
+                                className="object-cover"
+                              />
+                            </div>
+                            <p className="text-sm text-green-700 font-medium">{formData.photo.name}</p>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setFormData(prev => ({ ...prev, photo: null }))}
+                              className="border-green-300 text-green-600 hover:bg-green-100"
+                            >
+                              Remove Photo
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            <Camera className="h-12 w-12 text-green-400 mx-auto" />
+                            <div>
+                              <p className="text-green-700 font-medium mb-1">Upload Employee Photo</p>
+                              <p className="text-xs text-green-600 mb-4">
+                                Supported formats: JPG, PNG (Max 5MB)
+                              </p>
+                            </div>
+                            <div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handlePhotoUpload}
+                                className="hidden"
+                                id="photo-upload"
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => document.getElementById('photo-upload')?.click()}
+                                className="border-green-300 text-green-600 hover:bg-green-100"
+                              >
+                                <Upload className="h-4 w-4 mr-2" />
+                                Choose Photo
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-sm font-medium text-green-800">
@@ -216,7 +302,7 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
 
                       <div className="space-y-2">
                         <Label className="text-sm font-medium text-green-800">
-                          Phone (Optional)
+                          Phone <span className="text-red-500">*</span>
                         </Label>
                         <Input
                           value={formData.phone}
@@ -261,7 +347,7 @@ export function AddAttendanceRecord({ onRecordAdded, onBack }: AddAttendanceReco
                   </Button>
                   <Button
                     type="submit"
-                    disabled={loading || !formData.employeeId.trim() || !formData.employeeName.trim() || !formData.email.trim() || !formData.password.trim()}
+                    disabled={loading || !formData.employeeId.trim() || !formData.employeeName.trim() || !formData.email.trim() || !formData.password.trim() || !formData.phone.trim()}
                     className="flex-1 h-14 text-base bg-blue-600 hover:bg-blue-700 disabled:opacity-50 font-medium shadow-sm"
                   >
                     {loading ? (

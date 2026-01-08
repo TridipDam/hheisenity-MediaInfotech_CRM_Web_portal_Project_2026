@@ -11,14 +11,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { getAllVehicles, getAllPetrolBills, createVehicle, Vehicle, PetrolBill } from "@/lib/server-api"
+import { getAllVehicles, getAllPetrolBills, createVehicle, deleteVehicle, Vehicle, PetrolBill } from "@/lib/server-api"
 import {
   Car,
   Plus,
   Search,
   Filter,
   MoreVertical,
-  Edit,
   Trash2,
   User,
   Calendar,
@@ -124,7 +123,9 @@ export function VehiclesPage() {
         type: vehicleForm.type
       }
 
+      console.log('Submitting vehicle data:', vehicleData)
       const response = await createVehicle(vehicleData)
+      console.log('Create vehicle response:', response)
       
       if (response.success) {
         // Reset form
@@ -148,9 +149,30 @@ export function VehiclesPage() {
       }
     } catch (error) {
       console.error('Error adding vehicle:', error)
-      alert('Failed to add vehicle')
+      alert('Failed to add vehicle: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleDeleteVehicle = async (vehicleId: string, vehicleNumber: string) => {
+    if (!confirm(`Are you sure you want to delete vehicle ${vehicleNumber}? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const response = await deleteVehicle(vehicleId)
+      
+      if (response.success) {
+        // Refresh data
+        await fetchData()
+        alert('Vehicle deleted successfully!')
+      } else {
+        alert(response.error || 'Failed to delete vehicle')
+      }
+    } catch (error) {
+      console.error('Error deleting vehicle:', error)
+      alert('Failed to delete vehicle: ' + (error instanceof Error ? error.message : 'Unknown error'))
     }
   }
 
@@ -424,8 +446,13 @@ export function VehiclesPage() {
                       {userType === 'admin' && (
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleDeleteVehicle(vehicle.id, vehicle.vehicleNumber)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                             <Button variant="ghost" size="sm">
                               <User className="h-4 w-4" />

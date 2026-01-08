@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
 import {
@@ -26,8 +27,7 @@ import {
     ChevronRight,
     LogOut,
     DollarSign,
-    UsersRound,
-    Car
+    UsersRound
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -63,13 +63,6 @@ const navigationItems = [
         description: "Salary and compensation"
     },
     {
-        title: "Vehicles",
-        url: "/vehicles",
-        icon: Car,
-        badge: null,
-        description: "Vehicle management"
-    },
-    {
         title: "Stock Management",
         url: "/stock",
         icon: Package,
@@ -96,9 +89,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         const userType = (session.user as any).userType
         
         if (userType === 'employee') {
-            // Employees can see Attendance and Vehicles
+            // Employees can see Attendance
             return navigationItems.filter(item => 
-                item.url === '/attendance' || item.url === '/vehicles'
+                item.url === '/attendance'
             )
         }
         
@@ -135,8 +128,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarHeader className="border-b border-border p-6">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-linear-to-br from-blue-600 to-blue-700 shadow-sm">
-                            <Building2 className="h-6 w-6 text-white" />
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg overflow-hidden">
+                            <Image 
+                                src="/Media_Infotech.webp" 
+                                alt="Media Infotech Logo" 
+                                width={40} 
+                                height={40}
+                                className="object-contain"
+                            />
                         </div>
                         <div className="flex flex-col">
                             <span className="text-xl font-bold text-foreground">Enterprise</span>

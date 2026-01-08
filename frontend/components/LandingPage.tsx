@@ -518,7 +518,7 @@ export default function LandingPage({ onGetStarted, isLoggedIn = false, userProf
                 priority
               />
             </div>
-            <span className="font-bold text-foreground">MediaTechInfo</span>
+            <span className="font-bold text-foreground">MediaInfoTech</span>
           </div>
   
         </div>

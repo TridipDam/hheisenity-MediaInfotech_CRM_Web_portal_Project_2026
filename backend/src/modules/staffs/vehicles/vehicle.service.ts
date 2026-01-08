@@ -123,18 +123,22 @@ export class VehicleService {
   // Create new vehicle
   async createVehicle(data: CreateVehicleRequest) {
     try {
+      console.log('VehicleService.createVehicle called with:', data)
+      
       // Check if vehicle number already exists
       const existingVehicle = await prisma.vehicle.findUnique({
         where: { vehicleNumber: data.vehicleNumber }
       })
 
       if (existingVehicle) {
+        console.log('Vehicle number already exists:', data.vehicleNumber)
         return {
           success: false,
           error: 'Vehicle number already exists'
         }
       }
 
+      console.log('Creating vehicle in database...')
       const vehicle = await prisma.vehicle.create({
         data: {
           vehicleNumber: data.vehicleNumber,
@@ -146,6 +150,7 @@ export class VehicleService {
         }
       })
 
+      console.log('Vehicle created successfully:', vehicle)
       return {
         success: true,
         data: vehicle
@@ -181,9 +186,9 @@ export class VehicleService {
         }
       }
 
-      // Check if employee exists
+      // Check if employee exists - look up by employeeId (display ID)
       const employee = await prisma.fieldEngineer.findUnique({
-        where: { id: data.employeeId }
+        where: { employeeId: data.employeeId }
       })
 
       if (!employee) {
@@ -196,7 +201,7 @@ export class VehicleService {
       // Check if employee already has a vehicle assigned
       const existingAssignment = await prisma.vehicle.findFirst({
         where: {
-          assignedTo: data.employeeId,
+          assignedTo: employee.id,
           status: VehicleStatus.ASSIGNED
         }
       })
@@ -208,11 +213,11 @@ export class VehicleService {
         }
       }
 
-      // Assign vehicle
+      // Assign vehicle - use the employee's database ID for assignedTo
       const updatedVehicle = await prisma.vehicle.update({
         where: { id: data.vehicleId },
         data: {
-          assignedTo: data.employeeId,
+          assignedTo: employee.id,
           assignedAt: new Date(),
           status: VehicleStatus.ASSIGNED
         },
@@ -278,16 +283,41 @@ export class VehicleService {
   // Get employee's assigned vehicle
   async getEmployeeVehicle(employeeId: string) {
     try {
+      // First, find the employee by their display ID to get the database ID
+      const employee = await prisma.fieldEngineer.findUnique({
+        where: { employeeId: employeeId }
+      })
+
+      if (!employee) {
+        return {
+          success: false,
+          error: 'Employee not found'
+        }
+      }
+
+      // Then find the vehicle assigned to this employee using the database ID
       const vehicle = await prisma.vehicle.findFirst({
         where: {
-          assignedTo: employeeId,
+          assignedTo: employee.id,
           status: VehicleStatus.ASSIGNED
+        },
+        include: {
+          employee: {
+            select: {
+              name: true,
+              employeeId: true
+            }
+          }
         }
       })
 
       return {
         success: true,
-        data: vehicle
+        data: vehicle ? {
+          ...vehicle,
+          employeeName: vehicle.employee?.name,
+          employeeId: vehicle.employee?.employeeId
+        } : null
       }
     } catch (error) {
       console.error('Error fetching employee vehicle:', error)
@@ -362,11 +392,23 @@ export class VehicleService {
   // Create petrol bill
   async createPetrolBill(employeeId: string, data: CreatePetrolBillRequest) {
     try {
-      // Verify vehicle is assigned to employee
+      // First, find the employee by their display ID to get the database ID
+      const employee = await prisma.fieldEngineer.findUnique({
+        where: { employeeId: employeeId }
+      })
+
+      if (!employee) {
+        return {
+          success: false,
+          error: 'Employee not found'
+        }
+      }
+
+      // Verify vehicle is assigned to employee using the database ID
       const vehicle = await prisma.vehicle.findFirst({
         where: {
           id: data.vehicleId,
-          assignedTo: employeeId,
+          assignedTo: employee.id,
           status: VehicleStatus.ASSIGNED
         }
       })
@@ -381,7 +423,7 @@ export class VehicleService {
       const bill = await prisma.petrolBill.create({
         data: {
           vehicleId: data.vehicleId,
-          employeeId: employeeId,
+          employeeId: employee.id, // Use the database ID for the petrol bill
           amount: data.amount,
           date: new Date(data.date),
           imageUrl: data.imageUrl,
@@ -462,6 +504,47 @@ export class VehicleService {
       return {
         success: false,
         error: 'Failed to process petrol bill'
+      }
+    }
+  }
+
+  // Delete vehicle
+  async deleteVehicle(vehicleId: string) {
+    try {
+      // Check if vehicle exists
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { id: vehicleId }
+      })
+
+      if (!vehicle) {
+        return {
+          success: false,
+          error: 'Vehicle not found'
+        }
+      }
+
+      // Check if vehicle is assigned
+      if (vehicle.status === VehicleStatus.ASSIGNED) {
+        return {
+          success: false,
+          error: 'Cannot delete assigned vehicle. Please unassign first.'
+        }
+      }
+
+      // Delete the vehicle
+      await prisma.vehicle.delete({
+        where: { id: vehicleId }
+      })
+
+      return {
+        success: true,
+        message: 'Vehicle deleted successfully'
+      }
+    } catch (error) {
+      console.error('Error deleting vehicle:', error)
+      return {
+        success: false,
+        error: 'Failed to delete vehicle'
       }
     }
   }

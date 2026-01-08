@@ -1319,6 +1319,34 @@ export async function unassignVehicle(vehicleId: string): Promise<AssignVehicleR
   }
 }
 
+export type DeleteVehicleResponse = {
+  success: boolean
+  message?: string
+  error?: string
+}
+
+export async function deleteVehicle(vehicleId: string): Promise<DeleteVehicleResponse> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/vehicles/${vehicleId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    const response = await res.json()
+
+    if (!res.ok) {
+      throw new Error(response.error || 'Failed to delete vehicle')
+    }
+
+    return response
+  } catch (error) {
+    console.error('deleteVehicle error:', error)
+    throw error
+  }
+}
+
 export async function getEmployeeVehicle(employeeId: string): Promise<GetVehicleResponse> {
   try {
     const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/vehicles/employee/${employeeId}`, {

@@ -116,12 +116,6 @@ export function EmployeeSelector({
     }
   }
 
-  const filteredEmployees = fieldEngineers.filter(emp => 
-    emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    emp.email.toLowerCase().includes(searchTerm.toLowerCase())
-  )
-
   return (
     <div className="space-y-6">
       {/* Employee Selection */}

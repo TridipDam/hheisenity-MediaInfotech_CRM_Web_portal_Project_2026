@@ -61,8 +61,19 @@ export class VehicleController {
   // POST /vehicles - Create new vehicle
   async createVehicle(req: Request, res: Response) {
     try {
+      console.log('Creating vehicle with data:', req.body)
       const data: CreateVehicleRequest = req.body
+      
+      // Validate required fields
+      if (!data.vehicleNumber || !data.make || !data.model || !data.type) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing required fields: vehicleNumber, make, model, type'
+        })
+      }
+      
       const result = await vehicleService.createVehicle(data)
+      console.log('Vehicle creation result:', result)
 
       if (result.success) {
         res.status(201).json(result)
@@ -228,6 +239,27 @@ export class VehicleController {
       }
     } catch (error) {
       console.error('Error in approvePetrolBill:', error)
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error'
+      })
+    }
+  }
+
+  // DELETE /vehicles/:id - Delete vehicle
+  async deleteVehicle(req: Request, res: Response) {
+    try {
+      const { id } = req.params
+
+      const result = await vehicleService.deleteVehicle(id)
+
+      if (result.success) {
+        res.json(result)
+      } else {
+        res.status(400).json(result)
+      }
+    } catch (error) {
+      console.error('Error in deleteVehicle:', error)
       res.status(500).json({
         success: false,
         error: 'Internal server error'
